@@ -117,12 +117,14 @@ func (a *App) defineExtension() {
 		Verb("register", a.register, "Run BIN catalog, validate it and write the registry file (restart nabe to mount it)").
 		Verb("unregister", a.unregister, "Remove an extension's registry file").Confirm("Unregister {{id}}?").
 		Verb("refresh", a.refresh, "Run catalog again for one extension, or every one").
+		Verb("order", a.order, "Place an extension's page: pages sort by order, then registration (restart nabe to see it)").
 		Verb("list", a.list, "List the registry files as JSON").
 		Mode("normal").
 		Bind("r", ochazuke.Do("extension.refresh")).
 		Bind("d", ochazuke.Do("extension.unregister"))
 	params := map[string]map[string]ochazuke.Parameter{
-		"register":   {"bin": {Type: "string", Required: true, Description: "A path, or a name on PATH"}, "name": {Type: "string", Description: "The registry name (default: the catalog's name)"}},
+		"register":   {"bin": {Type: "string", Required: true, Description: "A path, or a name on PATH"}, "name": {Type: "string", Description: "The registry name (default: the catalog's name)"}, "order": {Type: "integer", Description: "The page's place: pages sort by order (default 0), then registration"}},
+		"order":      {"name": {Type: "string", Required: true, Description: "The extension"}, "order": {Type: "integer", Required: true, Description: "Pages sort by order (default 0), then registration"}},
 		"unregister": {"name": {Type: "string", Description: "Omit on an extension row"}},
 		"refresh":    {"name": {Type: "string", Description: "Omit to refresh every extension"}},
 	}
@@ -146,9 +148,27 @@ func extName(c ochazuke.Ctx) string {
 
 func (a *App) register(c ochazuke.Ctx) ochazuke.Result {
 	bin, name := ochazuke.StringArg(c.Args, "bin", ""), ochazuke.StringArg(c.Args, "name", "")
+	var order *int
+	if _, ok := c.Args["order"]; ok {
+		n := ochazuke.IntArg(c.Args, "order", 0)
+		order = &n
+	}
 	return a.work(func(ctx context.Context) (any, error) {
-		return a.reg.Register(ctx, bin, name)
+		return a.reg.Register(ctx, bin, name, order)
 	}, a.afterRegistry)
+}
+
+func (a *App) order(c ochazuke.Ctx) ochazuke.Result {
+	name := extName(c)
+	if name == "" {
+		return ochazuke.Failed(errors.New("order needs a name"))
+	}
+	n := ochazuke.IntArg(c.Args, "order", 0)
+	if err := a.reg.SetOrder(name, n); err != nil {
+		return ochazuke.Failed(err)
+	}
+	a.afterRegistry(nil, nil)
+	return ochazuke.Done(map[string]any{"name": name, "order": n})
 }
 
 func (a *App) unregister(c ochazuke.Ctx) ochazuke.Result {

@@ -30,8 +30,13 @@ type Entry struct {
 	// RefreshEvery overrides how often nabe reloads the extension's rows
 	// (a Go duration; "0s" never; default 60s). Register and refresh keep
 	// it.
-	RefreshEvery string         `json:"refreshEvery,omitempty"`
-	Catalog      cli.CatalogDoc `json:"catalog"`
+	RefreshEvery string `json:"refreshEvery,omitempty"`
+	// Order places the extension's page: pages sort by order, then by
+	// registeredAt (registration order), then by name. extension order
+	// and register --order set it; register and refresh keep it and
+	// registeredAt.
+	Order   int            `json:"order,omitempty"`
+	Catalog cli.CatalogDoc `json:"catalog"`
 }
 
 // Registry is the directory of registry files.
@@ -138,7 +143,7 @@ type Summary struct {
 // Register resolves bin (a path, or a name on PATH), asks it for its
 // catalog, validates it and writes the registry file under name (else the
 // catalog's name).
-func (g Registry) Register(ctx context.Context, bin, name string) (Summary, error) {
+func (g Registry) Register(ctx context.Context, bin, name string, order *int) (Summary, error) {
 	path, err := resolveBin(bin)
 	if err != nil {
 		return Summary{}, err
@@ -155,8 +160,11 @@ func (g Registry) Register(ctx context.Context, bin, name string) (Summary, erro
 		return Summary{}, fmt.Errorf("extension name %q: use lower-case letters, digits and _ (pass --name)", name)
 	}
 	e := Entry{Bin: path, RegisteredAt: time.Now().UTC().Truncate(time.Second), Catalog: doc}
-	if old, err := g.Read(name); err == nil {
-		e.RefreshEvery = old.RefreshEvery
+	if old, err := g.Read(name); err == nil { // re-registering keeps its place
+		e.RegisteredAt, e.RefreshEvery, e.Order = old.RegisteredAt, old.RefreshEvery, old.Order
+	}
+	if order != nil {
+		e.Order = *order
 	}
 	if err := g.write(name, e); err != nil {
 		return Summary{}, err
@@ -173,7 +181,50 @@ func (g Registry) Refresh(ctx context.Context, name string) (Summary, error) {
 	if err != nil {
 		return Summary{}, err
 	}
-	return g.Register(ctx, e.Bin, name)
+	return g.Register(ctx, e.Bin, name, nil)
+}
+
+// SetOrder writes name's page order.
+func (g Registry) SetOrder(name string, order int) error {
+	e, err := g.Read(name)
+	if err != nil {
+		return err
+	}
+	e.Order = order
+	return g.write(name, e)
+}
+
+// Ordered lists the registered extensions in page order: order, then
+// registeredAt, then name. A file that cannot be read sorts last by name
+// (mounting reports it).
+func (g Registry) Ordered() ([]string, error) {
+	names, err := g.Names()
+	if err != nil {
+		return nil, err
+	}
+	type key struct {
+		order int
+		at    time.Time
+		bad   bool
+	}
+	keys := map[string]key{}
+	for _, name := range names {
+		e, err := g.Read(name)
+		keys[name] = key{e.Order, e.RegisteredAt, err != nil}
+	}
+	sort.SliceStable(names, func(i, j int) bool {
+		a, b := keys[names[i]], keys[names[j]]
+		switch {
+		case a.bad != b.bad:
+			return b.bad
+		case a.order != b.order:
+			return a.order < b.order
+		case !a.at.Equal(b.at):
+			return a.at.Before(b.at)
+		}
+		return names[i] < names[j]
+	})
+	return names, nil
 }
 
 // Unregister removes name's file.

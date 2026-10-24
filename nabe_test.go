@@ -100,7 +100,7 @@ func TestRegisterByNameOnPathWithPrefixesAndName(t *testing.T) {
 	if out, errOut, err := nabe(t, "-data", data, "ext", "reg", "fake-ext", "third"); err != nil || !strings.Contains(out, `"summary": "third: 4 nouns`) {
 		t.Fatalf("ext reg BIN NAME: %v %q\n%s", err, out, errOut)
 	}
-	if _, _, err := nabe(t, "-data", data, "ext", "reg", "fake-ext", "x", "y"); err == nil || !strings.Contains(err.Error(), `unexpected argument "y"`) {
+	if _, _, err := nabe(t, "-data", data, "ext", "reg", "fake-ext", "x", "1", "y"); err == nil || !strings.Contains(err.Error(), `unexpected argument "y"`) {
 		t.Fatalf("too many words: %v", err)
 	}
 }
@@ -445,8 +445,8 @@ func TestExecBudget(t *testing.T) {
 				t.Fatalf("New execs %q", got)
 			}
 			a.LoadRows()
-			if view := frame(a); !strings.Contains(view, "refreshing…") {
-				t.Fatalf("no refreshing while the first load runs:\n%s", view)
+			if view := frame(a); !strings.Contains(view, "loading…") || strings.Contains(view, "alpha") {
+				t.Fatalf("the first page before any load lands: want empty lists and loading:\n%s", view)
 			}
 			if err := cli.Settle(a.r, nil); err != nil {
 				t.Fatal(err)
@@ -456,7 +456,7 @@ func TestExecBudget(t *testing.T) {
 			if !slices.Equal(got, c.startup) {
 				t.Fatalf("startup execs %q, want %q", got, c.startup)
 			}
-			if view := frame(a); strings.Contains(view, "refreshing…") || !strings.Contains(view, "alpha") || !strings.Contains(view, "pone") {
+			if view := frame(a); strings.Contains(view, "loading…") || strings.Contains(view, "refreshing…") || !strings.Contains(view, "alpha") || !strings.Contains(view, "beta") || !strings.Contains(view, "pone") || a.r.List("ext/fake/item").Len() != 2 {
 				t.Fatalf("after the load:\n%s", view)
 			}
 
@@ -553,5 +553,97 @@ func TestRefreshEveryOverride(t *testing.T) {
 	}
 	if e, _ := reg.Read("fake"); e.RefreshEvery != "soon" {
 		t.Fatalf("refresh dropped refreshEvery: %q", e.RefreshEvery)
+	}
+}
+
+// Every extension loads in the background from startup: the first page
+// draws before any load lands, every page is filled once the jobs settle,
+// and pages follow registration (registeredAt), then order.
+func TestPagesLoadInBackgroundInRegistrationOrder(t *testing.T) {
+	bin, _, data := fake(t)
+	t.Setenv("FAKE_MODE", "state")
+	reg := RegistryIn(data)
+	at := time.Date(2026, 10, 24, 18, 0, 0, 0, time.UTC)
+	for i, name := range []string{"zeta", "alpha"} {
+		if _, errOut, err := nabe(t, "-data", data, "extension", "register", bin, name); err != nil {
+			t.Fatalf("register %s: %v\n%s", name, err, errOut)
+		}
+		e, _ := reg.Read(name)
+		e.RegisteredAt = at.Add(time.Duration(i) * time.Minute) // zeta first
+		if err := reg.write(name, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pages := func(a *App) string {
+		var ids []string
+		for _, p := range a.r.PageList() {
+			ids = append(ids, p.ID)
+		}
+		return strings.Join(ids, " ")
+	}
+	a, err := New(Options{Data: data})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := pages(a); got != "ext/zeta ext/alpha extensions" || a.r.Page != "ext/zeta" {
+		t.Fatalf("pages %q open %s", got, a.r.Page)
+	}
+	a.LoadRows()
+	if view := frame(a); !strings.Contains(view, "loading…") || a.r.List("ext/zeta/item").Len() != 0 {
+		t.Fatalf("first page before the loads land:\n%s", view)
+	}
+	if err := cli.Settle(a.r, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"ext/zeta/item", "ext/alpha/item", "ext/zeta/projects", "ext/alpha/projects"} {
+		if n := a.r.List(id).Len(); n == 0 {
+			t.Fatalf("%s empty after the loads settled", id)
+		}
+	}
+	if _, errOut, err := nabe(t, "-data", data, "extension", "order", "alpha", "-1"); err != nil {
+		t.Fatalf("order: %v\n%s", err, errOut)
+	}
+	if _, errOut, err := nabe(t, "-data", data, "extension", "refresh"); err != nil {
+		t.Fatalf("refresh: %v\n%s", err, errOut)
+	}
+	if a, err = New(Options{Data: data}); err != nil {
+		t.Fatal(err)
+	}
+	if got := pages(a); got != "ext/alpha ext/zeta extensions" {
+		t.Fatalf("after order alpha -1 and a refresh: pages %q", got)
+	}
+	if e, _ := reg.Read("zeta"); !e.RegisteredAt.Equal(at) {
+		t.Fatalf("refresh moved registeredAt to %s", e.RegisteredAt)
+	}
+}
+
+// The first load shows each batch as it lands; a refresh keeps the old
+// rows whole until its stream ends, then swaps every list (a noun with no
+// lines is emptied).
+func TestStateBatchesFillFirstThenSwapOnRefresh(t *testing.T) {
+	_, data := registered(t)
+	a, err := New(Options{Data: data})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := a.exts[0]
+	item, projects := a.r.List("ext/fake/item"), a.r.List("ext/fake/projects")
+	st := &stateLoad{items: map[string][]ochazuke.ListItem{}, seen: map[string]bool{}}
+	a.stateBatch(m, st, stateBatch{rows: []cli.Row{{Noun: "item", ID: "a1", Label: "alpha"}}})
+	if item.Len() != 1 || m.loaded {
+		t.Fatalf("first batch: %d rows, loaded %v", item.Len(), m.loaded)
+	}
+	a.stateBatch(m, st, stateBatch{rows: []cli.Row{{Noun: "item", ID: "b2"}, {Noun: "projects", ID: "p1", Label: "pone"}}, done: true})
+	if item.Len() != 2 || projects.Len() != 1 || !m.loaded {
+		t.Fatalf("end: item %d projects %d loaded %v", item.Len(), projects.Len(), m.loaded)
+	}
+	st = &stateLoad{items: map[string][]ochazuke.ListItem{}, seen: map[string]bool{}}
+	a.stateBatch(m, st, stateBatch{rows: []cli.Row{{Noun: "item", ID: "c3"}}})
+	if item.Len() != 2 {
+		t.Fatalf("a refresh's partial batch replaced the rows: %d", item.Len())
+	}
+	a.stateBatch(m, st, stateBatch{done: true})
+	if item.Len() != 1 || projects.Len() != 0 {
+		t.Fatalf("refresh end: item %d projects %d", item.Len(), projects.Len())
 	}
 }

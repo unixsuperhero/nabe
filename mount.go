@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -42,6 +45,8 @@ type mounted struct {
 	// list); stateErr why its last load failed.
 	state    string
 	stateErr string
+	loaded   bool            // the first load landed; until then the page says loading
+	stream   *stateLoad      // the running state load, nil when none
 	fresh    map[string]bool // extension noun.verb -> declares a boolean fresh
 	every    time.Duration   // the refresh interval; 0 never
 }
@@ -72,6 +77,7 @@ type nounList struct {
 	source  string
 	rowNoun string
 	err     string // why the last row load failed
+	loaded  bool   // its first load landed (lists loaded on their own)
 }
 
 // localNoun is the nabe noun of an extension's noun. A dot would split the
@@ -92,10 +98,11 @@ var (
 // rowActivateKey runs a verb row's verb.
 const rowActivateKey = "enter"
 
-// mountAll mounts every registry file in name order; a file that cannot be
-// read or mounted becomes a warning.
+// mountAll mounts every registry file in page order (Registry.Ordered:
+// order, then registration); a file that cannot be read or mounted becomes
+// a warning.
 func (a *App) mountAll() error {
-	names, err := a.reg.Names()
+	names, err := a.reg.Ordered()
 	if err != nil {
 		return err
 	}
@@ -492,39 +499,163 @@ func (a *App) reload(m *mounted, fresh bool) {
 		return
 	}
 	noun, verb, _ := strings.Cut(m.state, ".")
-	args := m.args(m.state, fresh)
-	a.load(m.page, func(ctx context.Context) (any, error) {
-		out, err := execBin(ctx, m.bin, noun, verb, "--json", args)
-		if err != nil {
-			return nil, err
+	args := []string{noun, verb, "--json", m.args(m.state, fresh)}
+	if m.stream != nil {
+		m.stream.stop() // a newer load replaces it
+	}
+	st := &stateLoad{items: map[string][]ochazuke.ListItem{}, seen: map[string]bool{}}
+	m.stream = st
+	if a.sync {
+		out, err := execBin(context.Background(), m.bin, args...)
+		if err == nil {
+			st.rr = cli.NewRowReader(bytes.NewReader(out))
 		}
-		return decoded(out), nil
+		for err == nil {
+			var b stateBatch
+			if b, err = st.next(); err == nil {
+				a.stateBatch(m, st, b)
+				if b.done {
+					break
+				}
+			}
+		}
+		if err != nil {
+			a.stateFailed(m, st, err)
+		}
+		return
+	}
+	st.ctx, st.cancel = context.WithTimeout(context.Background(), execTimeout)
+	a.nextBatch(m, st, m.bin, args)
+}
+
+// Streaming a state load: the exec's stdout is read as JSON Lines in
+// batches (stateBatchRows rows, or stateBatchWait after a batch's first
+// line), each batch a quiet job whose completion files the rows by noun and
+// launches the next. The first load pushes each batch to its lists, so a
+// page fills while the extension still prints; a refresh swaps the lists
+// when the stream ends, so the old rows stay whole until then.
+const (
+	stateBatchRows = 200
+	stateBatchWait = 100 * time.Millisecond
+)
+
+// stateLoad is one running state exec.
+type stateLoad struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	cmd    *exec.Cmd
+	stderr bytes.Buffer
+	rr     *cli.RowReader
+	items  map[string][]ochazuke.ListItem // rows so far by list noun
+	seen   map[string]bool                // noun/id already filed
+}
+
+// stateBatch is one batch of a stream.
+type stateBatch struct {
+	rows []cli.Row
+	done bool
+}
+
+func (st *stateLoad) stop() {
+	if st.cancel != nil {
+		st.cancel()
+	}
+}
+
+// start runs the exec with stdout read as rows.
+func (st *stateLoad) start(bin string, args []string) error {
+	st.cmd = exec.CommandContext(st.ctx, bin, args...)
+	st.cmd.Stderr = &st.stderr
+	out, err := st.cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	if err := st.cmd.Start(); err != nil {
+		return err
+	}
+	st.rr = cli.NewRowReader(out)
+	return nil
+}
+
+// next reads one batch; at the end of the stream it waits for the exec,
+// whose failure (with its stderr) fails the load.
+func (st *stateLoad) next() (stateBatch, error) {
+	rows, done, err := st.rr.Next(stateBatchRows, stateBatchWait)
+	if done && st.cmd != nil {
+		if werr := st.cmd.Wait(); werr != nil {
+			if msg := strings.TrimSpace(st.stderr.String()); msg != "" {
+				werr = fmt.Errorf("%w: %s", werr, msg)
+			}
+			err = werr
+		}
+	}
+	return stateBatch{rows, done}, err
+}
+
+// nextBatch launches the job reading the stream's next batch (the first
+// starts the exec).
+func (a *App) nextBatch(m *mounted, st *stateLoad, bin string, args []string) {
+	words := filepath.Base(bin) + " " + strings.Join(args[:2], " ")
+	a.load(m.page, func(context.Context) (any, error) {
+		if st.rr == nil {
+			if err := st.start(bin, args); err != nil {
+				return nil, err
+			}
+		}
+		b, err := st.next()
+		if err != nil {
+			return nil, fmt.Errorf("%s failed: %w", words, err)
+		}
+		return b, nil
 	}, func(v any, err error) {
-		m.stateErr = ""
+		if m.stream != st {
+			return // replaced by a newer load
+		}
 		if err != nil {
-			m.stateErr = err.Error()
+			a.stateFailed(m, st, err)
 			return
 		}
-		state, ok := v.(map[string]any)
-		if !ok {
-			m.stateErr = fmt.Sprintf("%s: want a JSON object of rows by noun, got %T", m.state, v)
-			return
-		}
-		for _, l := range m.lists {
-			if l.source == "" {
-				continue
-			}
-			rows, ok := state[l.noun]
-			if !ok {
-				a.loadList(m, l, fresh)
-				continue
-			}
-			l.err = ""
-			if err := a.setRows(l, rows); err != nil {
-				l.err = err.Error()
-			}
+		b := v.(stateBatch)
+		a.stateBatch(m, st, b)
+		if !b.done {
+			a.nextBatch(m, st, bin, args)
 		}
 	})
+}
+
+// stateBatch files a batch's rows under their lists; the first load shows
+// them at once, and the stream's end sets every list (a noun without lines
+// has no rows).
+func (a *App) stateBatch(m *mounted, st *stateLoad, b stateBatch) {
+	touched := map[string]bool{}
+	for _, row := range b.rows {
+		if st.seen[row.Noun+"\x00"+row.ID] {
+			continue
+		}
+		st.seen[row.Noun+"\x00"+row.ID] = true
+		st.items[row.Noun] = append(st.items[row.Noun], ochazuke.ListItem{ID: row.ID, Label: row.Label})
+		touched[row.Noun] = true
+	}
+	for _, l := range m.lists {
+		if l.source == "" || !(b.done || !m.loaded && touched[l.noun]) {
+			continue
+		}
+		l.err = ""
+		if err := a.setItems(l, st.items[l.noun]); err != nil {
+			l.err = err.Error()
+		}
+	}
+	if b.done {
+		m.loaded, m.stateErr, m.stream = true, "", nil
+		st.stop()
+	}
+}
+
+// stateFailed is a load that failed entirely: the rows stay, the page
+// says why.
+func (a *App) stateFailed(m *mounted, st *stateLoad, err error) {
+	st.stop()
+	m.stateErr, m.stream = err.Error(), nil
 }
 
 // args is the --json of a source exec: {"fresh": true} on an explicit
@@ -553,6 +684,8 @@ func (a *App) loadList(m *mounted, l *nounList, fresh bool) {
 		if err != nil {
 			l.err = err.Error()
 		}
+		l.loaded = true
+		m.loaded = !slices.ContainsFunc(m.lists, func(l *nounList) bool { return l.source != "" && !l.loaded })
 	})
 }
 
@@ -595,15 +728,31 @@ func (a *App) setRows(l *nounList, v any) error {
 			return fmt.Errorf("%s %s: want a JSON array, got %T", l.noun, l.source, v)
 		}
 	}
-	items := make([]ochazuke.ListItem, 0, len(values))
-	seen := map[string]bool{}
+	rows := make([]ochazuke.ListItem, 0, len(values))
 	for _, value := range values {
 		id, label := rowOf(value)
-		if id == "" || seen[id] {
+		rows = append(rows, ochazuke.ListItem{ID: id, Label: label})
+	}
+	return a.setItems(l, rows)
+}
+
+// setItems shows rows (the extension's id and label) in l: instance ids
+// prefixed with the list id, so two extensions' rows never meet; each
+// row's Data is the extension's own id (--target); a label stands in for a
+// missing one, an empty or repeated id is dropped.
+func (a *App) setItems(l *nounList, rows []ochazuke.ListItem) error {
+	items := make([]ochazuke.ListItem, 0, len(rows))
+	seen := map[string]bool{}
+	for _, row := range rows {
+		if row.ID == "" || seen[row.ID] {
 			continue
 		}
-		seen[id] = true
-		items = append(items, ochazuke.ListItem{ID: l.id + "/" + id, Label: label, Noun: l.rowNoun, Data: id})
+		seen[row.ID] = true
+		label := row.Label
+		if label == "" {
+			label = row.ID
+		}
+		items = append(items, ochazuke.ListItem{ID: l.id + "/" + row.ID, Label: label, Noun: l.rowNoun, Data: row.ID})
 	}
 	return l.list.SetItems(items)
 }
@@ -657,7 +806,11 @@ func (a *App) renderMounted(m *mounted) func(*ochazuke.Runtime, int, int) ochazu
 				parts = append(parts, rows)
 			}
 		}
-		for _, line := range []string{map[bool]string{true: "refreshing…"}[a.refreshing(m)], m.stateErr, m.status} {
+		busy := map[bool]string{true: "refreshing…"}[a.refreshing(m)]
+		if busy != "" && !m.loaded {
+			busy = "loading…" // the lists stay empty until the first rows land
+		}
+		for _, line := range []string{busy, m.stateErr, m.status} {
 			if line != "" {
 				parts = append(parts, s.Muted.Render(ansi.Truncate(line, width, "…")))
 			}

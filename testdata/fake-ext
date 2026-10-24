@@ -37,13 +37,15 @@ case "$1 $2" in
 	printf ']\n'
 	;;
 "item state")
-	sep=
-	printf '{"item":['
+	# JSON Lines tagged by noun, with a malformed line in the middle: the
+	# host skips it and loses nothing else.
+	n=0
 	while read -r id name; do
-		printf '%s{"id":"%s","name":"%s"}' "$sep" "$id" "$name"
-		sep=,
+		printf '{"noun":"item","id":"%s","label":"%s"}\n' "$id" "$name"
+		n=$((n + 1))
+		[ $n -eq 1 ] && printf '{"noun":"item","id":\n'
 	done <"$state/items"
-	printf '],"projects":[{"id":"p1","name":"pone"}]}\n'
+	printf '{"noun":"projects","id":"p1","label":"pone"}\n'
 	;;
 "item touch") printf '{"touched":"%s"}\n' "$target" ;;
 "item remove")

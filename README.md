@@ -22,6 +22,8 @@ nabe ext reg mtm                   # the same, by prefixes
 nabe extension list                # JSON, one row per registry file
 nabe extension refresh [mtm]       # run catalog again (every extension without a name)
 nabe extension unregister mtm      # remove the file (asks; --yes skips)
+nabe extension order ai 9          # place a page: pages sort by order (default 0), then registration
+nabe ext reg o-ai ai 9             # register with an order (bare words: bin, name, order)
 nabe                               # the TUI: one page per extension, then Extensions
 nabe --smoke                       # one 80x24 frame with the rows loaded
 ```
@@ -40,7 +42,9 @@ nabe --smoke                       # one 80x24 frame with the rows loaded
 entry = {
   bin: "/Users/me/go/bin/mtm",           // resolved absolute path
   registeredAt: "2026-10-24T18:08:50Z",
-  refreshEvery: "5m",                    // optional, hand-edited: how often the rows reload ("0s" never; default 60s); register and refresh keep it
+  refreshEvery: "5m",                    // optional, hand-edited: how often the rows reload ("0s" never; default 60s)
+  order: 0,                              // optional: pages sort by order, then registeredAt, then name (extension order NAME N, register --order N)
+  // register and refresh keep registeredAt, refreshEvery and order: re-registering never moves a page
   catalog: {                             // the CatalogDoc the bin answered, verbatim
     schema: 1, name: "mtm", version: "v0.0.0-…",
     state: "projects.state",             // optional state source: every list's rows in one call
@@ -62,7 +66,7 @@ entry = {
 mount("mtm") = {
   page:     { id: "ext/mtm", title: "mtm" },
   nouns:    "every noun with an application verb and no modal pin (pin is \"\" or \"normal\"), as mtm-<noun>; the rest are skipped",
-  state:    "with a catalog state source: `mtm projects state --json {}` once, answering { projects: [rows], harness: [rows] }; each list takes its noun's rows",
+  state:    "with a catalog state source: `mtm projects state --json {}` once, answering JSON Lines {noun, id, label} tagged by list noun; each list takes its noun's lines",
   rows:     "without one, or for a noun the state omits, per noun with a row source (the verb declaring rows, else list): `mtm NOUN VERB --json {}`",
   row:      { id: "ext/mtm/projects/p1", label: "pone", noun: "mtm-project", data: "p1" }, // from { id: "p1", name: "pone" }; noun is the verb's rows, else the list's own
   verbRows: "any other noun no row source lists: one row per verb; enter runs it (not for verbs with required parameters: use the palette)",
@@ -78,7 +82,7 @@ The rows on screen are a cache. nabe runs an extension's bin only:
 
 ```js
 execs = {
-  startup:           "one state exec per extension with a state source, else one per list",
+  startup:           "every extension at once, in the background: one state exec each with a state source, else one per list",
   everyInterval:     "the same load, on a quiet timer (refreshEvery, default 60s)",
   afterVerb:         "the verb itself, then the state (or only the verb's own list)",
   extensionRefresh:  "catalog, then the state with --json '{\"fresh\":true}' when the source declares fresh",
@@ -86,13 +90,21 @@ execs = {
 }
 ```
 
-Loads run as quiet jobs (off the jobs ticker); the page's last line says `refreshing…` while one runs, and the old rows stay on screen until the new ones land. A failed state load shows its error there and keeps the rows. A list draws at most a screen of rows and scrolls to its selection, so a frame formats only what can show.
+Pages follow registration order (`registeredAt`, then `order`), so the first tab is the first extension registered; the others load behind it while it is read. Loads are quiet jobs (off the jobs ticker). Until a page's first rows land its lists are empty and its last line says `loading…`; later loads say `refreshing…` and keep the old rows until the new ones are complete. A load that fails entirely (the exec fails, exits non-zero, or prints nothing decodable) shows its error there and keeps the rows. `--smoke` waits for every load before drawing. A list draws at most a screen of rows and scrolls to its selection, so a frame formats only what can show.
 
-The state source is the ochazuke/cli catalog convention (`NounBuilder.State`, the catalog's top-level `state`, `"NOUN.VERB"`): one process answers `{ "<noun>": [ {id, label}, ... ], ... }`, keyed by the noun whose row source it replaces. o-ai (`status state`) and mtm (`projects state`) have one; an extension without it keeps per-list loads.
+The state source is the ochazuke/cli catalog convention (`NounBuilder.State`, the catalog's top-level `state`, `"NOUN.VERB"`). It answers every list in one process as JSON Lines, one row per line tagged with the list noun whose row source it replaces:
+
+```js
+// o-ai status state
+{"noun":"agent","id":"agent/agent:claude:/Users/me/.claude/agents/ada.md","label":"ada [claude]"}
+{"noun":"skill","id":"skill/skill:claude:/Users/me/.claude/skills/review/SKILL.md","label":"review [claude]"}
+```
+
+nabe reads the stream as it arrives (`cli.NewRowReader`: batches of 200 rows or 100 ms): on the first load each batch goes to its list at once, so a page fills while the extension still prints; a refresh swaps the lists when the stream ends. A malformed line is skipped silently. A noun with no lines has no rows. o-ai (`status state`) and mtm (`projects state`) have one; an extension without it keeps per-list loads (`NOUN list --json {}`, a JSON array).
 
 ## Limits
 
-- Mounting reads the registry once at startup; restart nabe after `register`, `refresh` or `unregister`.
+- Mounting reads the registry once at startup; restart nabe after `register`, `refresh`, `order` or `unregister`.
 - A catalog without `rows` keeps the old shape: rows of `projects list` are `mtm-projects` rows, and a noun such as `project` sits on verb rows without a target.
 - Parameter pick lists (`source`) name the extension's own operations; nabe does not yet run them through the bin, so they are dropped. Enums stay.
 - Pattern rows (`digit`, `any`) are not compared for collisions; only the first key of a sequence is.
