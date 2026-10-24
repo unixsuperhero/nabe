@@ -26,10 +26,9 @@ type App struct {
 	exts   []*mounted        // one per registry file that mounted
 	owners map[string]string // noun -> the instance a CLI command of it acts for
 
-	r        *ochazuke.Runtime
-	m        *ochazuke.Model
-	extList  *ochazuke.List
-	extCount int
+	r       *ochazuke.Runtime
+	m       *ochazuke.Model
+	extList *ochazuke.List
 }
 
 // extensionNoun is nabe's one noun of its own.
@@ -219,16 +218,12 @@ func (a *App) refreshExtensions() error {
 		}
 		items = append(items, ochazuke.ListItem{ID: l.Name, Label: label, Noun: extensionNoun})
 	}
-	if err := a.extList.SetItems(items); err != nil {
-		return err
-	}
-	a.extCount = len(items)
-	return nil
+	return a.extList.SetItems(items)
 }
 
 func (a *App) renderExtensions(_ *ochazuke.Runtime, width, height int) ochazuke.Block {
 	s := ochazuke.NewStyles(*a.m.Appearance)
-	n := a.extCount
+	n := a.extList.Len()
 	head := s.Muted.Render(fmt.Sprintf("registry %s (%d)", a.reg.Dir, n))
 	if n == 0 {
 		return ochazuke.Text(head + "\n" + "no extensions registered: nabe extension register BIN")

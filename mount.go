@@ -44,7 +44,6 @@ type nounList struct {
 	source  string
 	rowNoun string
 	err     string // why the last row load failed
-	count   int
 }
 
 // localNoun is the nabe noun of an extension's noun. A dot would split the
@@ -232,7 +231,6 @@ func (a *App) verbRows(m *mounted, l *nounList, verbs []cli.CatalogVerb) error {
 	if err := l.list.SetItems(items); err != nil {
 		return err
 	}
-	l.count = len(items)
 	for _, v := range verbs {
 		if len(required(v.Params)) > 0 {
 			continue
@@ -443,11 +441,7 @@ func (a *App) setRows(l *nounList, v any) error {
 		seen[id] = true
 		items = append(items, ochazuke.ListItem{ID: l.id + "/" + id, Label: label, Noun: l.rowNoun, Data: id})
 	}
-	if err := l.list.SetItems(items); err != nil {
-		return err
-	}
-	l.count = len(items)
-	return nil
+	return l.list.SetItems(items)
 }
 
 // rowOf reads a row's id and label: an object's first id and label fields
@@ -484,13 +478,14 @@ func (a *App) renderMounted(m *mounted) func(*ochazuke.Runtime, int, int) ochazu
 		s := ochazuke.NewStyles(*a.m.Appearance)
 		var parts []string
 		for _, l := range m.lists {
-			head := fmt.Sprintf("%s (%d)", l.noun, l.count)
+			n := l.list.Len()
+			head := fmt.Sprintf("%s (%d)", l.noun, n)
 			if l.err != "" {
 				head = l.noun + ": " + l.err
 			}
 			parts = append(parts, s.Muted.Render(ansi.Truncate(head, width, "…")))
-			if l.count > 0 {
-				parts = append(parts, strings.TrimRight(l.list.View(width, l.count), "\n"))
+			if n > 0 {
+				parts = append(parts, strings.TrimRight(l.list.View(width, n), "\n"))
 			}
 		}
 		if m.status != "" {
