@@ -35,6 +35,8 @@ case "$1 $2" in
 	printf '{"removed":"%s"}\n' "$target"
 	;;
 "tool ping") echo '{"pong":true}' ;;
+"projects list") echo '[{"id":"p1","name":"pone"}]' ;;
+"project open") printf '{"opened":"%s"}\n' "$target" ;;
 "tool echo") echo "$4" ;;
 *) echo "fake: unknown command $*" >&2; exit 1 ;;
 esac

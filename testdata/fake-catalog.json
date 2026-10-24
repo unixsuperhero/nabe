@@ -12,6 +12,15 @@
     {"name": "tool", "verbs": [
       {"name": "echo", "description": "Echo the text", "kind": "application", "params": {"text": {"type": "string", "required": true}}},
       {"name": "ping", "description": "Answer pong", "kind": "application"}
+    ]},
+    {"name": "projects", "verbs": [
+      {"name": "list", "description": "List the projects", "kind": "application", "result": "row[]", "rows": "project"}
+    ]},
+    {"name": "project", "verbs": [
+      {"name": "open", "description": "Open a project", "kind": "application"}
+    ]},
+    {"name": "field", "pin": "insert", "verbs": [
+      {"name": "submit", "description": "Submit the field", "kind": "application"}
     ]}
   ],
   "bindings": [
@@ -19,7 +28,8 @@
     {"noun": "item", "mode": "normal", "keys": "x", "request": {"verb": "remove", "noun": "item"}},
     {"noun": "item", "mode": "normal", "keys": "t", "request": {"verb": "touch", "noun": "item"}},
     {"noun": "item", "mode": "normal", "keys": "j", "request": {"verb": "touch", "noun": "item"}},
-    {"noun": "tool", "mode": "normal", "keys": "p", "request": {"verb": "ping", "noun": "tool"}}
+    {"noun": "tool", "mode": "normal", "keys": "p", "request": {"verb": "ping", "noun": "tool"}},
+    {"noun": "project", "mode": "normal", "keys": "o", "request": {"verb": "open", "noun": "project"}}
   ],
   "pages": []
 }

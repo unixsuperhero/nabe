@@ -17,7 +17,8 @@ import (
 // noun (planOf), and on a nabe noun <ext>-<noun> one proxy verb per catalog
 // verb. A proxy execs `<bin> NOUN VERB [--target ID] --json ARGS --yes` as
 // pending work; its completion reloads the extension's lists. Rows of a
-// noun with a list verb come from `<bin> NOUN list --json {}` (loadRows);
+// noun with a row source come from `<bin> NOUN VERB --json {}` (loadRows),
+// answering to the noun the verb's catalog rows names (else the noun's own);
 // any other noun gets one row per verb, enter on the row running it. The
 // catalog's binding rows for mounted nouns are loaded through LoadBindings;
 // a row whose key a framework noun on the row's path already binds is
@@ -38,16 +39,20 @@ type nounList struct {
 	local string // the nabe noun, <ext>-<noun>
 	id    string
 	list  *ochazuke.List
-	rows  bool   // rows come from NOUN list
-	err   string // why the last row load failed
-	count int
+	// source is the verb whose answer is the list's rows ("" for verb
+	// rows); rowNoun is the nabe noun those rows answer to.
+	source  string
+	rowNoun string
+	err     string // why the last row load failed
+	count   int
 }
 
 // localNoun is the nabe noun of an extension's noun. A dot would split the
 // operation key (noun.verb), so the separator is a hyphen.
 func localNoun(ext, noun string) string { return ext + "-" + noun }
 
-// rowSourceVerb is the verb whose JSON answer is a noun's rows.
+// rowSourceVerb is the verb whose JSON answer is a noun's own rows when no
+// verb of the noun declares rows.
 const rowSourceVerb = "list"
 
 // idFields and labelFields are the row object fields read, first present
@@ -85,7 +90,11 @@ func (a *App) warn(format string, args ...any) {
 	a.m.Notify(fmt.Sprintf(format, args...))
 }
 
-// mount adds one extension's page, nouns, lists and binding rows.
+// mount adds one extension's page, nouns, lists and binding rows. Every
+// mounted noun gets its verbs; a list is made for each noun with a row
+// source (rowSource) and for each noun no other noun's source lists rows
+// of (that one gets verb rows). A noun whose rows another noun lists has
+// no list of its own: its verbs answer on those rows.
 func (a *App) mount(name string, e Entry) error {
 	r := a.r
 	m := &mounted{name: name, bin: e.Bin, page: "ext/" + name}
@@ -94,6 +103,7 @@ func (a *App) mount(name string, e Entry) error {
 	}
 	p := planOf(e.Catalog)
 	mountedNouns := map[string]string{}
+	var nouns []cli.CatalogNoun
 	for _, n := range p.Nouns {
 		local := localNoun(name, n.Name)
 		if r.Noun(local) != nil {
@@ -101,8 +111,8 @@ func (a *App) mount(name string, e Entry) error {
 			continue
 		}
 		mountedNouns[n.Name] = local
+		nouns = append(nouns, n)
 		b := r.Define(local)
-		l := &nounList{noun: n.Name, local: local, id: m.page + "/" + n.Name}
 		for _, v := range n.Verbs {
 			b.Verb(v.Name, a.proxy(m, n.Name, v.Name), v.Description)
 			if v.Confirm != "" {
@@ -113,7 +123,33 @@ func (a *App) mount(name string, e Entry) error {
 				op.Parameters = withoutSources(v.Params)
 				r.Operations[op.Key()] = op
 			}
-			l.rows = l.rows || v.Name == rowSourceVerb
+		}
+	}
+	// listedBy maps a noun to the noun whose row source lists its rows.
+	listedBy := map[string]string{}
+	for _, n := range nouns {
+		verb, rows := rowSource(n)
+		if verb == "" || rows == n.Name {
+			continue
+		}
+		if _, ok := mountedNouns[rows]; !ok {
+			a.warn("%s: %s %s lists rows of %s, which is not mounted; its rows answer to %s", name, n.Name, verb, rows, n.Name)
+			continue
+		}
+		if _, taken := listedBy[rows]; !taken {
+			listedBy[rows] = n.Name
+		}
+	}
+	homes := map[string]string{} // noun -> the list its instances live in
+	for _, n := range nouns {
+		verb, rows := rowSource(n)
+		if _, ok := listedBy[n.Name]; ok && verb == "" {
+			continue
+		}
+		local := mountedNouns[n.Name]
+		l := &nounList{noun: n.Name, local: local, id: m.page + "/" + n.Name, source: verb, rowNoun: local}
+		if other, ok := mountedNouns[rows]; ok && verb != "" {
+			l.rowNoun = other
 		}
 		list, err := r.AddList(l.id, nil, ochazuke.Parent(m.page))
 		if err != nil {
@@ -121,26 +157,50 @@ func (a *App) mount(name string, e Entry) error {
 		}
 		l.list = list
 		a.owners[local] = l.id
-		if !l.rows {
+		homes[n.Name] = l.id
+		if l.source == "" {
 			if err := a.verbRows(m, l, n.Verbs); err != nil {
 				return err
 			}
 		}
 		m.lists = append(m.lists, l)
 	}
+	for noun, source := range listedBy {
+		if _, own := homes[noun]; !own {
+			homes[noun] = homes[source]
+		}
+	}
 	// Lists with rows first: they hold the extension's data.
 	slices.SortStableFunc(m.lists, func(x, y *nounList) int {
 		switch {
-		case x.rows == y.rows:
+		case (x.source == "") == (y.source == ""):
 			return 0
-		case x.rows:
+		case x.source != "":
 			return -1
 		}
 		return 1
 	})
-	a.loadBindings(m, e.Catalog.Bindings, mountedNouns)
+	a.loadBindings(m, e.Catalog.Bindings, mountedNouns, homes)
 	a.exts = append(a.exts, m)
 	return nil
+}
+
+// rowSource is the verb whose JSON answer is a noun's rows and the noun
+// those rows answer to: the first verb declaring rows (the catalog's rows),
+// else a verb named list, whose rows are the noun's own. "" when the noun
+// has neither.
+func rowSource(n cli.CatalogNoun) (verb, rows string) {
+	for _, v := range n.Verbs {
+		if v.Rows != "" {
+			return v.Name, v.Rows
+		}
+	}
+	for _, v := range n.Verbs {
+		if v.Name == rowSourceVerb {
+			return v.Name, n.Name
+		}
+	}
+	return "", ""
 }
 
 // withoutSources copies params without their pick-list sources: a source
@@ -177,7 +237,7 @@ func (a *App) verbRows(m *mounted, l *nounList, verbs []cli.CatalogVerb) error {
 		if len(required(v.Params)) > 0 {
 			continue
 		}
-		row := ochazuke.Binding{Instance: l.local + "/" + v.Name, Mode: "normal", Keys: rowActivateKey, Request: ochazuke.Request{Noun: l.local, Verb: v.Name}}
+		row := ochazuke.Binding{Instance: l.local + "/" + v.Name, Mode: normalMode, Keys: rowActivateKey, Request: ochazuke.Request{Noun: l.local, Verb: v.Name}}
 		if err := a.r.Bind(row); err != nil {
 			a.warn("%s: %s %s: no %s row: %v", m.name, l.noun, v.Name, rowActivateKey, err)
 		}
@@ -198,8 +258,8 @@ func required(params map[string]ochazuke.Parameter) []string {
 }
 
 // loadBindings installs the catalog rows of the mounted nouns, renamed to
-// the nabe nouns.
-func (a *App) loadBindings(m *mounted, rows []ochazuke.Binding, nouns map[string]string) {
+// the nabe nouns; homes is the list each noun's instances live in.
+func (a *App) loadBindings(m *mounted, rows []ochazuke.Binding, nouns, homes map[string]string) {
 	for _, row := range rows {
 		local, ok := nouns[row.Noun]
 		if !ok {
@@ -216,7 +276,7 @@ func (a *App) loadBindings(m *mounted, rows []ochazuke.Binding, nouns map[string
 			a.warn("%s dropped: %s is not mounted", where, row.Request.Key())
 			continue
 		}
-		listID := m.page + "/" + row.Noun
+		listID := homes[row.Noun]
 		row.Noun = local
 		if owner, taken := a.taken(listID, row); taken {
 			a.warn("%s dropped: taken by %s", where, owner)
@@ -326,15 +386,15 @@ func (a *App) LoadRows() {
 	}
 }
 
-// loadRows reloads every list of m whose noun has a list verb, each as a
+// loadRows reloads every list of m with a row source, each as a
 // job in the list's rows slot (a newer load replaces an older one).
 func (a *App) loadRows(m *mounted) {
 	for _, l := range m.lists {
-		if !l.rows {
+		if l.source == "" {
 			continue
 		}
 		fetch := func(ctx context.Context) (any, error) {
-			out, err := execBin(ctx, m.bin, l.noun, rowSourceVerb, "--json", "{}")
+			out, err := execBin(ctx, m.bin, l.noun, l.source, "--json", "{}")
 			if err != nil {
 				return nil, err
 			}
@@ -354,13 +414,14 @@ func (a *App) loadRows(m *mounted) {
 			continue
 		}
 		res := ochazuke.Pending(fetch).Replacing("rows").Then(func(_ ochazuke.Ctx, v any, err error) { apply(v, err) })
-		if _, err := a.r.Launch(l.id, l.local+"."+rowSourceVerb, res, ochazuke.Ctx{Runtime: a.r}); err != nil {
+		if _, err := a.r.Launch(l.id, l.local+"."+l.source, res, ochazuke.Ctx{Runtime: a.r}); err != nil {
 			l.err = err.Error()
 		}
 	}
 }
 
-// setRows turns a list answer (a JSON array) into rows of the list's noun.
+// setRows turns a list answer (a JSON array) into rows of the list's row
+// noun.
 // Row instance ids are prefixed with the list id, so two extensions'
 // rows never meet; each row's Data is the extension's own id (--target).
 func (a *App) setRows(l *nounList, v any) error {
@@ -369,7 +430,7 @@ func (a *App) setRows(l *nounList, v any) error {
 		if v == nil {
 			values = nil
 		} else {
-			return fmt.Errorf("%s list: want a JSON array, got %T", l.noun, v)
+			return fmt.Errorf("%s %s: want a JSON array, got %T", l.noun, l.source, v)
 		}
 	}
 	items := make([]ochazuke.ListItem, 0, len(values))
@@ -380,7 +441,7 @@ func (a *App) setRows(l *nounList, v any) error {
 			continue
 		}
 		seen[id] = true
-		items = append(items, ochazuke.ListItem{ID: l.id + "/" + id, Label: label, Noun: l.local, Data: id})
+		items = append(items, ochazuke.ListItem{ID: l.id + "/" + id, Label: label, Noun: l.rowNoun, Data: id})
 	}
 	if err := l.list.SetItems(items); err != nil {
 		return err

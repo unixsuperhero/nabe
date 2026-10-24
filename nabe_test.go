@@ -68,7 +68,7 @@ func TestRegisterWritesTheFileAndPrintsTheSummary(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &s); err != nil {
 		t.Fatalf("stdout %q: %v", out, err)
 	}
-	if want := "fake: 2 nouns, 5 verbs, 0 pages (framework nouns skipped: 1)"; s.Summary != want {
+	if want := "fake: 4 nouns, 7 verbs, 0 pages (framework nouns skipped: 2)"; s.Summary != want {
 		t.Fatalf("summary %q, want %q", s.Summary, want)
 	}
 	raw, err := os.ReadFile(filepath.Join(data, "catalogs", "fake.json"))
@@ -79,7 +79,7 @@ func TestRegisterWritesTheFileAndPrintsTheSummary(t *testing.T) {
 	if err := json.Unmarshal(raw, &e); err != nil {
 		t.Fatal(err)
 	}
-	if e.Bin != bin || e.RegisteredAt.IsZero() || e.Catalog.Name != "fake" || len(e.Catalog.Nouns) != 3 {
+	if e.Bin != bin || e.RegisteredAt.IsZero() || e.Catalog.Name != "fake" || len(e.Catalog.Nouns) != 6 {
 		t.Fatalf("entry = %+v", e)
 	}
 }
@@ -88,14 +88,14 @@ func TestRegisterByNameOnPathWithPrefixesAndName(t *testing.T) {
 	bin, _, data := fake(t)
 	t.Setenv("PATH", filepath.Dir(bin)+string(os.PathListSeparator)+os.Getenv("PATH"))
 	out, errOut, err := nabe(t, "-data", data, "ext", "reg", "fake-ext", "--name", "other")
-	if err != nil || !strings.Contains(out, `"summary": "other: 2 nouns`) {
+	if err != nil || !strings.Contains(out, `"summary": "other: 4 nouns`) {
 		t.Fatalf("ext reg: %v %q\n%s", err, out, errOut)
 	}
 	if e, err := (RegistryIn(data)).Read("other"); err != nil || e.Bin != bin {
 		t.Fatalf("entry %+v: %v", e, err)
 	}
 	// Bare words fill bin, then name (the shell's positional order).
-	if out, errOut, err := nabe(t, "-data", data, "ext", "reg", "fake-ext", "third"); err != nil || !strings.Contains(out, `"summary": "third: 2 nouns`) {
+	if out, errOut, err := nabe(t, "-data", data, "ext", "reg", "fake-ext", "third"); err != nil || !strings.Contains(out, `"summary": "third: 4 nouns`) {
 		t.Fatalf("ext reg BIN NAME: %v %q\n%s", err, out, errOut)
 	}
 	if _, _, err := nabe(t, "-data", data, "ext", "reg", "fake-ext", "x", "y"); err == nil || !strings.Contains(err.Error(), `unexpected argument "y"`) {
@@ -107,10 +107,10 @@ func TestListRefreshAndUnregister(t *testing.T) {
 	state, data := registered(t)
 	out, _, err := nabe(t, "-data", data, "extension", "list")
 	var rows []Listing
-	if err != nil || json.Unmarshal([]byte(out), &rows) != nil || len(rows) != 1 || rows[0].Name != "fake" || rows[0].Nouns != 2 || rows[0].Verbs != 5 {
+	if err != nil || json.Unmarshal([]byte(out), &rows) != nil || len(rows) != 1 || rows[0].Name != "fake" || rows[0].Nouns != 4 || rows[0].Verbs != 7 {
 		t.Fatalf("list: %v %q", err, out)
 	}
-	if out, _, err := nabe(t, "-data", data, "extension", "refresh"); err != nil || !strings.Contains(out, `"summary":"fake: 2 nouns`) {
+	if out, _, err := nabe(t, "-data", data, "extension", "refresh"); err != nil || !strings.Contains(out, `"summary":"fake: 4 nouns`) {
 		t.Fatalf("refresh: %v %q", err, out)
 	}
 	if n := strings.Count(strings.Join(calls(t, state), "\n"), "catalog"); n != 2 {
@@ -212,11 +212,14 @@ func TestTUIMountsThePageWithTheListRows(t *testing.T) {
 	if a.r.Noun("fake-app") != nil {
 		t.Fatal("the interaction-only noun app was mounted")
 	}
+	if a.r.Noun("fake-field") != nil {
+		t.Fatal("the noun pinned to insert was mounted")
+	}
 	if p := a.r.Operations["fake-item.touch"].Parameters["note"]; p.Type != "string" || p.Source != "" {
 		t.Fatalf("touch params %+v", p)
 	}
 	view := frame(a)
-	for _, want := range []string{"fake", "item (2)", "alpha", "beta", "tool (2)", "echo (palette: text)  Echo the text", "ping  Answer pong", "Extensions"} {
+	for _, want := range []string{"fake", "item (2)", "alpha", "beta", "tool (2)", "echo (palette: text)  Echo the text", "ping  Answer pong", "projects (1)", "pone", "Extensions"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("frame lacks %q:\n%s", want, view)
 		}
@@ -242,7 +245,7 @@ func TestBoundKeyRunsTheVerbAsAPendingJob(t *testing.T) {
 	before := len(calls(t, state))
 	drain(a, cmd)
 	got := calls(t, state)[before:]
-	if len(got) != 2 || got[0] != "item touch --target a1 --json {} --yes" || got[1] != "item list --json {}" {
+	if len(got) != 3 || got[0] != "item touch --target a1 --json {} --yes" || got[1] != "item list --json {}" || got[2] != "projects list --json {}" {
 		t.Fatalf("calls after t: %q", got)
 	}
 	if view := frame(a); !strings.Contains(view, `item touch: {"touched":"a1"}`) {
@@ -336,5 +339,28 @@ func TestABrokenRegistryFileIsAWarning(t *testing.T) {
 	}
 	if len(a.exts) != 1 || !strings.Contains(strings.Join(a.m.Notices, "\n"), "bad.json") {
 		t.Fatalf("exts %d, notices %q", len(a.exts), a.m.Notices)
+	}
+}
+
+func TestListVerbRowsAnswerToTheDeclaredNoun(t *testing.T) {
+	a, state := tui(t)
+	l := a.r.List("ext/fake/projects")
+	if l == nil || l.Len() != 1 {
+		t.Fatalf("projects list %+v", l)
+	}
+	row := l.Items()[0]
+	if row.ID != "ext/fake/projects/p1" || row.Noun != "fake-project" || row.Data != "p1" {
+		t.Fatalf("row %+v", row)
+	}
+	if a.r.List("ext/fake/project") != nil {
+		t.Fatal("project, whose rows projects lists, got a list of its own")
+	}
+	if err := a.r.SetFocus(row.ID); err != nil {
+		t.Fatal(err)
+	}
+	before := len(calls(t, state))
+	drain(a, press(a, tea.KeyPressMsg{Code: 'o', Text: "o"}))
+	if got := calls(t, state)[before:]; len(got) < 1 || got[0] != "project open --target p1 --json {} --yes" {
+		t.Fatalf("calls after o: %q", got)
 	}
 }

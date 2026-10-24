@@ -289,11 +289,14 @@ type plan struct {
 	Skipped []string
 }
 
-// planOf keeps the nouns with at least one application verb. The
-// framework's own nouns (app, list, page, palette, prompt, input, mode,
-// focus, history, bindings, jobs, terminal, ...) have interaction verbs
-// only: they run inside the extension's process on its own screen, so a
-// host has nothing to mount for them. Kind decides it; no noun is named.
+// planOf keeps the nouns with at least one application verb whose pin is
+// not a modal mode. The framework's own nouns (app, list, page, palette,
+// prompt, input, mode, focus, history, bindings, jobs, terminal, ...) have
+// interaction verbs only: they run inside the extension's process on its
+// own screen, so a host has nothing to mount for them. A noun pinned to a
+// mode other than normal (the catalog's pin: an insert-mode field, a
+// terminal) lives only inside a modal of the extension's screen, so it is
+// skipped too. Kind and pin decide it; no noun is named.
 func planOf(doc cli.CatalogDoc) plan {
 	var p plan
 	for _, n := range doc.Nouns {
@@ -303,14 +306,20 @@ func planOf(doc cli.CatalogDoc) plan {
 				verbs = append(verbs, v)
 			}
 		}
-		if len(verbs) == 0 {
+		if len(verbs) == 0 || modalPin(n.Pin) {
 			p.Skipped = append(p.Skipped, n.Name)
 			continue
 		}
-		p.Nouns = append(p.Nouns, cli.CatalogNoun{Name: n.Name, Verbs: verbs})
+		p.Nouns = append(p.Nouns, cli.CatalogNoun{Name: n.Name, Pin: n.Pin, Verbs: verbs})
 	}
 	return p
 }
+
+// normalMode is the base mode: a noun pinned to it is not modal.
+const normalMode = "normal"
+
+// modalPin reports a pin to a mode other than normal.
+func modalPin(pin string) bool { return pin != "" && pin != normalMode }
 
 func (p plan) verbs() int {
 	n := 0
