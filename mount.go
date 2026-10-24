@@ -21,7 +21,7 @@ import (
 // any other noun gets one row per verb, enter on the row running it. The
 // catalog's binding rows for mounted nouns are loaded through LoadBindings;
 // a row whose key a framework noun on the row's path already binds is
-// dropped with a warning.
+// dropped with a warning (a footer notice, Model.Notify).
 
 // mounted is one extension on screen.
 type mounted struct {
@@ -80,8 +80,9 @@ func (a *App) mountAll() error {
 	return nil
 }
 
+// warn is a mount problem: a persistent notice in the footer.
 func (a *App) warn(format string, args ...any) {
-	a.warnings = append(a.warnings, fmt.Sprintf(format, args...))
+	a.m.Notify(fmt.Sprintf(format, args...))
 }
 
 // mount adds one extension's page, nouns, lists and binding rows.
@@ -414,9 +415,9 @@ func rowOf(value any) (string, string) {
 	return id, label
 }
 
-// renderMounted is an extension page: each list under its heading, the last
-// verb's status and the mount warnings. Taller content scrolls (pgup and
-// pgdown).
+// renderMounted is an extension page: each list under its heading and the
+// last verb's status (mount warnings are footer notices). Taller content
+// scrolls (pgup and pgdown).
 func (a *App) renderMounted(m *mounted) func(*ochazuke.Runtime, int, int) ochazuke.Block {
 	return func(_ *ochazuke.Runtime, width, height int) ochazuke.Block {
 		s := ochazuke.NewStyles(*a.m.Appearance)
@@ -433,9 +434,6 @@ func (a *App) renderMounted(m *mounted) func(*ochazuke.Runtime, int, int) ochazu
 		}
 		if m.status != "" {
 			parts = append(parts, s.Muted.Render(ansi.Truncate(m.status, width, "…")))
-		}
-		if w := a.warningLines(s, width); w != "" {
-			parts = append(parts, w)
 		}
 		return ochazuke.Text(strings.Join(parts, "\n"))
 	}

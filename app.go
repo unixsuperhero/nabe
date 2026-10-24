@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/unixsuperhero/ochazuke"
 )
 
@@ -25,9 +24,8 @@ type App struct {
 	reg  Registry
 	sync bool
 
-	exts     []*mounted        // one per registry file that mounted
-	owners   map[string]string // noun -> the instance a CLI command of it acts for
-	warnings []string          // mount problems, shown on the pages and in the footer
+	exts   []*mounted        // one per registry file that mounted
+	owners map[string]string // noun -> the instance a CLI command of it acts for
 
 	r        *ochazuke.Runtime
 	m        *ochazuke.Model
@@ -69,7 +67,6 @@ func New(opts Options) (*App, error) {
 	if _, err := r.ValidateBindings(); err != nil {
 		return nil, err
 	}
-	a.m.Status = strings.Join(a.warnings, "; ")
 	first := extensionsPage
 	if len(a.exts) > 0 {
 		first = a.exts[0].page
@@ -269,15 +266,5 @@ func (a *App) renderExtensions(_ *ochazuke.Runtime, width, height int) ochazuke.
 	if n == 0 {
 		return ochazuke.Text(head + "\n" + "no extensions registered: nabe extension register BIN")
 	}
-	body := head + "\n" + strings.TrimRight(a.extList.View(width, max(1, min(n, height-3))), "\n")
-	return ochazuke.Text(body + "\n" + a.warningLines(s, width))
-}
-
-// warningLines is the mount warnings, one per line.
-func (a *App) warningLines(s ochazuke.Styles, width int) string {
-	lines := make([]string, 0, len(a.warnings))
-	for _, w := range a.warnings {
-		lines = append(lines, s.Muted.Render(ansi.Truncate("warning: "+w, width, "…")))
-	}
-	return strings.Join(lines, "\n")
+	return ochazuke.Text(head + "\n" + strings.TrimRight(a.extList.View(width, max(1, min(n, height-3))), "\n"))
 }

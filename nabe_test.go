@@ -273,16 +273,19 @@ func TestBindingsValidateAndCollisionsAreWarned(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "fake: key j on item dropped: taken by list (list.move)"
-	if len(a.warnings) != 1 || a.warnings[0] != want || !strings.Contains(a.m.Status, want) {
-		t.Fatalf("warnings %q, status %q", a.warnings, a.m.Status)
+	if len(a.m.Notices) != 1 || a.m.Notices[0] != want || a.m.Status != "" {
+		t.Fatalf("notices %q, status %q", a.m.Notices, a.m.Status)
 	}
-	if view := frame(a); !strings.Contains(view, "Error: fake: key j on item dropped") || !strings.Contains(view, "warning: fake: key j") {
-		t.Fatalf("frame lacks the warning:\n%s", view)
+	if view := frame(a); !strings.Contains(view, "Notice: fake: key j on item dropped") {
+		t.Fatalf("frame lacks the notice:\n%s", view)
 	}
-	// j still moves the list.
+	// j still moves the list, and the notice outlives the key.
 	press(a, tea.KeyPressMsg{Code: 'j', Text: "j"})
 	if a.r.Focus != "ext/fake/item/b2" {
 		t.Fatalf("j: focus %q", a.r.Focus)
+	}
+	if view := frame(a); !strings.Contains(view, "Notice: fake: key j on item dropped") {
+		t.Fatalf("the notice went with the key:\n%s", view)
 	}
 	for _, row := range a.r.Noun("fake-item").Bindings["normal"] {
 		if row.Keys == "j" {
@@ -323,7 +326,7 @@ func TestABrokenRegistryFileIsAWarning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(a.exts) != 1 || !strings.Contains(strings.Join(a.warnings, "\n"), "bad.json") {
-		t.Fatalf("exts %d, warnings %q", len(a.exts), a.warnings)
+	if len(a.exts) != 1 || !strings.Contains(strings.Join(a.m.Notices, "\n"), "bad.json") {
+		t.Fatalf("exts %d, notices %q", len(a.exts), a.m.Notices)
 	}
 }
