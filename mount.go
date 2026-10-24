@@ -121,7 +121,7 @@ func (a *App) mount(name string, e Entry) error {
 		l.list = list
 		a.owners[local] = l.id
 		if !l.rows {
-			if err := a.verbRows(l, n.Verbs); err != nil {
+			if err := a.verbRows(m, l, n.Verbs); err != nil {
 				return err
 			}
 		}
@@ -154,11 +154,15 @@ func withoutSources(params map[string]ochazuke.Parameter) map[string]ochazuke.Pa
 }
 
 // verbRows fills a noun's list with one row per verb, each answering the
-// activate key with its own verb.
-func (a *App) verbRows(l *nounList, verbs []cli.CatalogVerb) error {
+// activate key with its own verb. A verb with required parameters gets no
+// key (a row cannot supply them); the palette runs it.
+func (a *App) verbRows(m *mounted, l *nounList, verbs []cli.CatalogVerb) error {
 	items := make([]ochazuke.ListItem, 0, len(verbs))
 	for _, v := range verbs {
 		label := v.Name
+		if req := required(v.Params); len(req) > 0 {
+			label += " (palette: " + strings.Join(req, ", ") + ")"
+		}
 		if v.Description != "" {
 			label += "  " + v.Description
 		}
@@ -169,12 +173,27 @@ func (a *App) verbRows(l *nounList, verbs []cli.CatalogVerb) error {
 	}
 	l.count = len(items)
 	for _, v := range verbs {
+		if len(required(v.Params)) > 0 {
+			continue
+		}
 		row := ochazuke.Binding{Instance: l.local + "/" + v.Name, Mode: "normal", Keys: rowActivateKey, Request: ochazuke.Request{Noun: l.local, Verb: v.Name}}
 		if err := a.r.Bind(row); err != nil {
-			return err
+			a.warn("%s: %s %s: no %s row: %v", m.name, l.noun, v.Name, rowActivateKey, err)
 		}
 	}
 	return nil
+}
+
+// required lists a verb's required parameters, sorted.
+func required(params map[string]ochazuke.Parameter) []string {
+	var out []string
+	for name, p := range params {
+		if p.Required {
+			out = append(out, name)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // loadBindings installs the catalog rows of the mounted nouns, renamed to
@@ -214,14 +233,14 @@ func (a *App) loadBindings(m *mounted, rows []ochazuke.Binding, nouns map[string
 
 // taken reports the framework or nabe row a mounted row would shadow: a
 // row with the same first key, in the same mode or in any mode, on a noun
-// of the row's path (its list, the page, app) or on nabe's own noun.
+// of the row's path (its list, the page, app; nabe's own rows there too).
 // Pattern rows (digit, any) are not compared.
 func (a *App) taken(listID string, row ochazuke.Binding) (string, bool) {
 	if row.Keys == "" {
 		return "", false
 	}
 	first := strings.Fields(row.Keys)[0]
-	nouns := []string{extensionNoun}
+	var nouns []string
 	for _, id := range a.r.Ancestry(listID) {
 		nouns = append(nouns, a.r.Instances[id].Noun)
 	}
@@ -380,8 +399,8 @@ func (a *App) setRows(l *nounList, v any) error {
 	return nil
 }
 
-// rowOf reads a row's id and label: an object's first id and label fields,
-// a scalar as both.
+// rowOf reads a row's id and label: an object's first id and label fields
+// (either stands in for the other), a scalar as both.
 func rowOf(value any) (string, string) {
 	obj, ok := value.(map[string]any)
 	if !ok {
@@ -396,8 +415,10 @@ func rowOf(value any) (string, string) {
 		}
 		return ""
 	}
-	id := pick(idFields)
-	label := pick(labelFields)
+	id, label := pick(idFields), pick(labelFields)
+	if id == "" {
+		id = label
+	}
 	if label == "" {
 		label = id
 	}

@@ -67,7 +67,7 @@ func TestRegisterWritesTheFileAndPrintsTheSummary(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &s); err != nil {
 		t.Fatalf("stdout %q: %v", out, err)
 	}
-	if want := "fake: 2 nouns, 4 verbs, 0 pages (framework nouns skipped: 1)"; s.Summary != want {
+	if want := "fake: 2 nouns, 5 verbs, 0 pages (framework nouns skipped: 1)"; s.Summary != want {
 		t.Fatalf("summary %q, want %q", s.Summary, want)
 	}
 	raw, err := os.ReadFile(filepath.Join(data, "catalogs", "fake.json"))
@@ -99,7 +99,7 @@ func TestListRefreshAndUnregister(t *testing.T) {
 	state, data := registered(t)
 	out, _, err := nabe(t, "-data", data, "extension", "list")
 	var rows []Listing
-	if err != nil || json.Unmarshal([]byte(out), &rows) != nil || len(rows) != 1 || rows[0].Name != "fake" || rows[0].Nouns != 2 || rows[0].Verbs != 4 {
+	if err != nil || json.Unmarshal([]byte(out), &rows) != nil || len(rows) != 1 || rows[0].Name != "fake" || rows[0].Nouns != 2 || rows[0].Verbs != 5 {
 		t.Fatalf("list: %v %q", err, out)
 	}
 	if out, _, err := nabe(t, "-data", data, "extension", "refresh"); err != nil || !strings.Contains(out, `"summary":"fake: 2 nouns`) {
@@ -198,6 +198,9 @@ func TestTUIMountsThePageWithTheListRows(t *testing.T) {
 	if a.r.Focus != "ext/fake/item/a1" {
 		t.Fatalf("focus %q", a.r.Focus)
 	}
+	if rows := a.r.Instances["fake-tool/echo"].Bindings; len(rows) != 0 {
+		t.Fatalf("a verb with required parameters got rows %+v", rows)
+	}
 	if a.r.Noun("fake-app") != nil {
 		t.Fatal("the interaction-only noun app was mounted")
 	}
@@ -205,7 +208,7 @@ func TestTUIMountsThePageWithTheListRows(t *testing.T) {
 		t.Fatalf("touch params %+v", p)
 	}
 	view := frame(a)
-	for _, want := range []string{"fake", "item (2)", "alpha", "beta", "tool (1)", "ping  Answer pong", "Extensions"} {
+	for _, want := range []string{"fake", "item (2)", "alpha", "beta", "tool (2)", "echo (palette: text)  Echo the text", "ping  Answer pong", "Extensions"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("frame lacks %q:\n%s", want, view)
 		}

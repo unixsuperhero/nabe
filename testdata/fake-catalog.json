@@ -9,7 +9,10 @@
       {"name": "remove", "description": "Remove an item", "kind": "application", "confirm": "Remove {{label}}?"},
       {"name": "touch", "description": "Touch an item and report it", "kind": "application", "params": {"note": {"type": "string", "source": "item.list"}}}
     ]},
-    {"name": "tool", "verbs": [{"name": "ping", "description": "Answer pong", "kind": "application"}]}
+    {"name": "tool", "verbs": [
+      {"name": "echo", "description": "Echo the text", "kind": "application", "params": {"text": {"type": "string", "required": true}}},
+      {"name": "ping", "description": "Answer pong", "kind": "application"}
+    ]}
   ],
   "bindings": [
     {"noun": "app", "keys": "ctrl+c", "request": {"verb": "quit", "noun": "app"}},
