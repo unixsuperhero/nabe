@@ -94,6 +94,13 @@ func TestRegisterByNameOnPathWithPrefixesAndName(t *testing.T) {
 	if e, err := (RegistryIn(data)).Read("other"); err != nil || e.Bin != bin {
 		t.Fatalf("entry %+v: %v", e, err)
 	}
+	// Bare words fill bin, then name (the shell's positional order).
+	if out, errOut, err := nabe(t, "-data", data, "ext", "reg", "fake-ext", "third"); err != nil || !strings.Contains(out, `"summary": "third: 2 nouns`) {
+		t.Fatalf("ext reg BIN NAME: %v %q\n%s", err, out, errOut)
+	}
+	if _, _, err := nabe(t, "-data", data, "ext", "reg", "fake-ext", "x", "y"); err == nil || !strings.Contains(err.Error(), `unexpected argument "y"`) {
+		t.Fatalf("too many words: %v", err)
+	}
 }
 
 func TestListRefreshAndUnregister(t *testing.T) {

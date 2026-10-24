@@ -12,12 +12,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/unixsuperhero/ochazuke"
 	ocli "github.com/unixsuperhero/ochazuke/cli"
 	"github.com/unixsuperhero/oden"
 )
@@ -73,9 +70,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 
 // commands is the oden App for one invocation: builtins, every noun of the
 // runtime and catalog (ochazuke/cli.Mount), Default the TUI or the shell.
-// Positional words after NOUN VERB fill the verb's parameters.
+// The shell fills a verb's parameters from bare words after NOUN VERB.
 func (a *App) commands(words []string, stdin io.Reader, stdout, stderr io.Writer, tui func() error, opts ...oden.Option) *oden.App {
-	app := oden.New(prog, nil, append([]oden.Option{oden.WithBuiltins(), oden.WithStdio(stdin, stdout, stderr)}, opts...)...)
+	app := oden.New(prog, words, append([]oden.Option{oden.WithBuiltins(), oden.WithStdio(stdin, stdout, stderr)}, opts...)...)
 	sh := ocli.New(a.r, prog, stdin, stdout, stderr)
 	sh.Usage = usage()
 	sh.Owners = a.owners
@@ -86,53 +83,5 @@ func (a *App) commands(words []string, stdin io.Reader, stdout, stderr io.Writer
 		return sh.Run(ctx, words)
 	}
 	ocli.Mount(app, sh)
-	app.Args = positionals(app, a.r, words)
 	return app
-}
-
-// positionals rewrites `NOUN VERB WORD...` (the words before the first
-// flag) into --PARAM WORD for a mounted noun command, filling the verb's
-// parameters required first, then by name: the palette's order. Anything
-// that is not a noun command, or names no single verb, is left as is.
-func positionals(app *oden.App, r *ochazuke.Runtime, words []string) []string {
-	if len(words) < 3 {
-		return words
-	}
-	res := app.Catalog().Resolve(words[0])
-	if !res.Resolved() || res.Entry.Kind != oden.KindInline || r.Noun(res.Entry.Name) == nil {
-		return words
-	}
-	noun := res.Entry.Name
-	var verbs []string
-	for _, op := range r.Operations {
-		if op.Noun == noun && (op.Verb == words[1] || strings.HasPrefix(op.Verb, words[1])) {
-			if op.Verb == words[1] {
-				verbs = []string{op.Verb}
-				break
-			}
-			verbs = append(verbs, op.Verb)
-		}
-	}
-	if len(verbs) != 1 {
-		return words
-	}
-	op := r.Operations[noun+"."+verbs[0]]
-	names := make([]string, 0, len(op.Parameters))
-	for name := range op.Parameters {
-		names = append(names, name)
-	}
-	sort.Slice(names, func(i, k int) bool {
-		ri, rk := op.Parameters[names[i]].Required, op.Parameters[names[k]].Required
-		if ri != rk {
-			return ri
-		}
-		return names[i] < names[k]
-	})
-	out := append([]string{}, words[:2]...)
-	i := 2
-	for ; i < len(words) && !strings.HasPrefix(words[i], "--") && len(names) > 0; i++ {
-		out = append(out, "--"+names[0], words[i])
-		names = names[1:]
-	}
-	return append(out, words[i:]...)
 }
