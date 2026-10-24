@@ -1,0 +1,39 @@
+#!/bin/sh
+# A fake extension for nabe's tests. State lives in $FAKE_STATE: items (one
+# "id name" line per item) and calls (one line per invocation's arguments).
+# FAKE_MODE=fail makes catalog fail; FAKE_MODE=schema2 answers schema 2.
+dir=$(dirname "$0")
+state=${FAKE_STATE:?FAKE_STATE is not set}
+echo "$*" >>"$state/calls"
+target=
+prev=
+for arg in "$@"; do
+	[ "$prev" = "--target" ] && target=$arg
+	prev=$arg
+done
+case "$1 $2" in
+"catalog ")
+	case "${FAKE_MODE:-}" in
+	fail) echo "catalog broke" >&2; exit 3 ;;
+	schema2) sed 's/"schema": 1/"schema": 2/' "$dir/fake-catalog.json"; exit 0 ;;
+	esac
+	cat "$dir/fake-catalog.json"
+	;;
+"item list")
+	sep=
+	printf '['
+	while read -r id name; do
+		printf '%s{"id":"%s","name":"%s"}' "$sep" "$id" "$name"
+		sep=,
+	done <"$state/items"
+	printf ']\n'
+	;;
+"item touch") printf '{"touched":"%s"}\n' "$target" ;;
+"item remove")
+	grep -v "^$target " "$state/items" >"$state/items.new"
+	mv "$state/items.new" "$state/items"
+	printf '{"removed":"%s"}\n' "$target"
+	;;
+"tool ping") echo '{"pong":true}' ;;
+*) echo "fake: unknown command $*" >&2; exit 1 ;;
+esac
