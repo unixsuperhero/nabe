@@ -1,7 +1,8 @@
 #!/bin/sh
 # A fake extension for nabe's tests. State lives in $FAKE_STATE: items (one
 # "id name" line per item) and calls (one line per invocation's arguments).
-# FAKE_MODE=fail makes catalog fail; FAKE_MODE=schema2 answers schema 2.
+# FAKE_MODE=fail makes catalog fail; FAKE_MODE=schema2 answers schema 2;
+# FAKE_MODE=state answers a catalog with a state source (item state).
 dir=$(dirname "$0")
 state=${FAKE_STATE:?FAKE_STATE is not set}
 echo "$*" >>"$state/calls"
@@ -16,6 +17,13 @@ case "$1 $2" in
 	case "${FAKE_MODE:-}" in
 	fail) echo "catalog broke" >&2; exit 3 ;;
 	schema2) sed 's/"schema": 1/"schema": 2/' "$dir/fake-catalog.json"; exit 0 ;;
+	state)
+		# A state source: item state answers item and projects in one call.
+		sed -e 's/"version": "0.1.0",/"version": "0.1.0", "state": "item.state",/' \
+			-e 's/{"name": "list", "description": "List the items"/{"name": "state", "description": "Every list", "kind": "application", "params": {"fresh": {"type": "boolean"}}},\n      &/' \
+			"$dir/fake-catalog.json"
+		exit 0
+		;;
 	esac
 	cat "$dir/fake-catalog.json"
 	;;
@@ -27,6 +35,15 @@ case "$1 $2" in
 		sep=,
 	done <"$state/items"
 	printf ']\n'
+	;;
+"item state")
+	sep=
+	printf '{"item":['
+	while read -r id name; do
+		printf '%s{"id":"%s","name":"%s"}' "$sep" "$id" "$name"
+		sep=,
+	done <"$state/items"
+	printf '],"projects":[{"id":"p1","name":"pone"}]}\n'
 	;;
 "item touch") printf '{"touched":"%s"}\n' "$target" ;;
 "item remove")

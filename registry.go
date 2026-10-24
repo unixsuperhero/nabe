@@ -25,8 +25,12 @@ import (
 
 // Entry is one registry file.
 type Entry struct {
-	Bin          string         `json:"bin"`
-	RegisteredAt time.Time      `json:"registeredAt"`
+	Bin          string    `json:"bin"`
+	RegisteredAt time.Time `json:"registeredAt"`
+	// RefreshEvery overrides how often nabe reloads the extension's rows
+	// (a Go duration; "0s" never; default 60s). Register and refresh keep
+	// it.
+	RefreshEvery string         `json:"refreshEvery,omitempty"`
 	Catalog      cli.CatalogDoc `json:"catalog"`
 }
 
@@ -150,7 +154,11 @@ func (g Registry) Register(ctx context.Context, bin, name string) (Summary, erro
 	if !validName.MatchString(name) {
 		return Summary{}, fmt.Errorf("extension name %q: use lower-case letters, digits and _ (pass --name)", name)
 	}
-	if err := g.write(name, Entry{Bin: path, RegisteredAt: time.Now().UTC().Truncate(time.Second), Catalog: doc}); err != nil {
+	e := Entry{Bin: path, RegisteredAt: time.Now().UTC().Truncate(time.Second), Catalog: doc}
+	if old, err := g.Read(name); err == nil {
+		e.RefreshEvery = old.RefreshEvery
+	}
+	if err := g.write(name, e); err != nil {
 		return Summary{}, err
 	}
 	p := planOf(doc)

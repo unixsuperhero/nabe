@@ -40,8 +40,10 @@ nabe --smoke                       # one 80x24 frame with the rows loaded
 entry = {
   bin: "/Users/me/go/bin/mtm",           // resolved absolute path
   registeredAt: "2026-10-24T18:08:50Z",
+  refreshEvery: "5m",                    // optional, hand-edited: how often the rows reload ("0s" never; default 60s); register and refresh keep it
   catalog: {                             // the CatalogDoc the bin answered, verbatim
     schema: 1, name: "mtm", version: "v0.0.0-…",
+    state: "projects.state",             // optional state source: every list's rows in one call
     nouns: [
       { name: "projects", verbs: [{ name: "list", kind: "application", result: "JSON value", rows: "project" }] },
       { name: "project",  verbs: [{ name: "open", kind: "application" }] },
@@ -60,14 +62,33 @@ entry = {
 mount("mtm") = {
   page:     { id: "ext/mtm", title: "mtm" },
   nouns:    "every noun with an application verb and no modal pin (pin is \"\" or \"normal\"), as mtm-<noun>; the rest are skipped",
-  rows:     "noun with a row source (the verb declaring rows, else list): `mtm NOUN VERB --json {}` (pending)",
+  state:    "with a catalog state source: `mtm projects state --json {}` once, answering { projects: [rows], harness: [rows] }; each list takes its noun's rows",
+  rows:     "without one, or for a noun the state omits, per noun with a row source (the verb declaring rows, else list): `mtm NOUN VERB --json {}`",
   row:      { id: "ext/mtm/projects/p1", label: "pone", noun: "mtm-project", data: "p1" }, // from { id: "p1", name: "pone" }; noun is the verb's rows, else the list's own
   verbRows: "any other noun no row source lists: one row per verb; enter runs it (not for verbs with required parameters: use the palette)",
-  verbs:    "mtm-project.open -> `mtm project open --target <row data> --json '{}' --yes` (pending), then the lists reload",
+  verbs:    "mtm-project.open -> `mtm project open --target <row data> --json '{}' --yes` (pending), then the state reloads (without a state source: only the lists holding that noun's rows)",
   confirm:  "the catalog's template, unchanged ({{label}} reads the row label)",
   bindings: "the catalog rows of mounted nouns via LoadBindings; a key the list, page or app already binds is dropped with a footer notice",
 }
 ```
+
+## When nabe execs
+
+The rows on screen are a cache. nabe runs an extension's bin only:
+
+```js
+execs = {
+  startup:           "one state exec per extension with a state source, else one per list",
+  everyInterval:     "the same load, on a quiet timer (refreshEvery, default 60s)",
+  afterVerb:         "the verb itself, then the state (or only the verb's own list)",
+  extensionRefresh:  "catalog, then the state with --json '{\"fresh\":true}' when the source declares fresh",
+  keysFocusPages:    "never: j/k, }, ctrl+j and page switches draw the cached rows",
+}
+```
+
+Loads run as quiet jobs (off the jobs ticker); the page's last line says `refreshing…` while one runs, and the old rows stay on screen until the new ones land. A failed state load shows its error there and keeps the rows. A list draws at most a screen of rows and scrolls to its selection, so a frame formats only what can show.
+
+The state source is the ochazuke/cli catalog convention (`NounBuilder.State`, the catalog's top-level `state`, `"NOUN.VERB"`): one process answers `{ "<noun>": [ {id, label}, ... ], ... }`, keyed by the noun whose row source it replaces. o-ai (`status state`) and mtm (`projects state`) have one; an extension without it keeps per-list loads.
 
 ## Limits
 

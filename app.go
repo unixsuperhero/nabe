@@ -184,7 +184,17 @@ func (a *App) refresh(c ochazuke.Ctx) ochazuke.Result {
 			out = append(out, s)
 		}
 		return out, errors.Join(errs...)
-	}, a.afterRegistry)
+	}, func(v any, err error) {
+		a.afterRegistry(v, err)
+		if a.sync {
+			return
+		}
+		for _, m := range a.exts { // an explicit refresh: the rows too, uncached
+			if name == "" || m.name == name {
+				a.reload(m, true)
+			}
+		}
+	})
 }
 
 func (a *App) list(ochazuke.Ctx) ochazuke.Result {

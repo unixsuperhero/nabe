@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -245,7 +247,8 @@ func TestBoundKeyRunsTheVerbAsAPendingJob(t *testing.T) {
 	before := len(calls(t, state))
 	drain(a, cmd)
 	got := calls(t, state)[before:]
-	if len(got) != 3 || got[0] != "item touch --target a1 --json {} --yes" || got[1] != "item list --json {}" || got[2] != "projects list --json {}" {
+	// Only the verb's own list reloads (the extension has no state source).
+	if len(got) != 2 || got[0] != "item touch --target a1 --json {} --yes" || got[1] != "item list --json {}" {
 		t.Fatalf("calls after t: %q", got)
 	}
 	if view := frame(a); !strings.Contains(view, `item touch: {"touched":"a1"}`) {
@@ -403,5 +406,152 @@ func TestListsDrawAndWalkInCatalogOrder(t *testing.T) {
 	}
 	if a.r.Focus != "ext/fake/projects/p1" {
 		t.Fatalf("the page's last stop moved: %q", a.r.Focus)
+	}
+}
+
+// execsAfter is the fake's invocations since before.
+func execsAfter(t *testing.T, state string, before int) []string {
+	t.Helper()
+	return calls(t, state)[before:]
+}
+
+// The exec budget: startup loads each extension once (one state exec, or
+// one per list without a state source), and keys, focus moves and page
+// switches never exec. A verb execs itself, then the state (or only its
+// own list); an explicit refresh asks for the state uncached; the timer
+// reloads once per tick. Stale rows show while a load runs, with
+// "refreshing" on the page.
+func TestExecBudget(t *testing.T) {
+	for _, c := range []struct {
+		mode    string
+		startup []string
+		verb    []string
+	}{
+		{"state", []string{"item state --json {}"}, []string{"item touch --target a1 --json {} --yes", "item state --json {}"}},
+		{"", []string{"item list --json {}", "projects list --json {}"}, []string{"item touch --target a1 --json {} --yes", "item list --json {}"}},
+	} {
+		t.Run("mode="+c.mode, func(t *testing.T) {
+			bin, state, data := fake(t)
+			t.Setenv("FAKE_MODE", c.mode)
+			if _, errOut, err := nabe(t, "-data", data, "extension", "register", bin); err != nil {
+				t.Fatalf("register: %v\n%s", err, errOut)
+			}
+			mark := len(calls(t, state))
+			a, err := New(Options{Data: data})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := execsAfter(t, state, mark); len(got) != 0 {
+				t.Fatalf("New execs %q", got)
+			}
+			a.LoadRows()
+			if view := frame(a); !strings.Contains(view, "refreshing…") {
+				t.Fatalf("no refreshing while the first load runs:\n%s", view)
+			}
+			if err := cli.Settle(a.r, nil); err != nil {
+				t.Fatal(err)
+			}
+			got := execsAfter(t, state, mark)
+			slices.Sort(got)
+			if !slices.Equal(got, c.startup) {
+				t.Fatalf("startup execs %q, want %q", got, c.startup)
+			}
+			if view := frame(a); strings.Contains(view, "refreshing…") || !strings.Contains(view, "alpha") || !strings.Contains(view, "pone") {
+				t.Fatalf("after the load:\n%s", view)
+			}
+
+			mark = len(calls(t, state))
+			ctrlJ := tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl}
+			for _, k := range []tea.KeyPressMsg{ctrlJ, ctrlJ, {Code: 'j', Text: "j"}, {Code: 'k', Text: "k"}, {Code: '}', Text: "}"}, {Code: '}', Text: "}"}, ctrlJ, ctrlJ} {
+				drain(a, press(a, k))
+				frame(a)
+			}
+			if got := execsAfter(t, state, mark); len(got) != 0 {
+				t.Fatalf("keys and page switches exec %q", got)
+			}
+			if a.r.Page != "ext/fake" {
+				t.Fatalf("page %s", a.r.Page)
+			}
+
+			if err := a.r.List("ext/fake/item").Focus(); err != nil {
+				t.Fatal(err)
+			}
+			mark = len(calls(t, state))
+			drain(a, press(a, tea.KeyPressMsg{Code: 't', Text: "t"}))
+			if got := execsAfter(t, state, mark); !slices.Equal(got, c.verb) {
+				t.Fatalf("verb execs %q, want %q", got, c.verb)
+			}
+
+			mark = len(calls(t, state))
+			if _, err := a.r.Execute(ochazuke.Request{Noun: "extension", Verb: "refresh", Args: ochazuke.Arguments{"name": "fake"}}); err != nil {
+				t.Fatal(err)
+			}
+			if err := cli.Settle(a.r, nil); err != nil {
+				t.Fatal(err)
+			}
+			want := []string{"catalog", "item list --json {}", "projects list --json {}"}
+			if c.mode == "state" {
+				want = []string{"catalog", `item state --json {"fresh":true}`}
+			}
+			if got := execsAfter(t, state, mark); !slices.Equal(got, want) {
+				t.Fatalf("extension refresh execs %q, want %q", got, want)
+			}
+
+			m := a.exts[0]
+			if m.every != defaultRefreshEvery {
+				t.Fatalf("every %s", m.every)
+			}
+			mark = len(calls(t, state))
+			a.StartRefresh() // armed, waiting: nothing runs yet
+			armed := slices.ContainsFunc(a.r.Jobs(), func(j ochazuke.JobInfo) bool {
+				return j.State == ochazuke.JobRunning && j.Verb == timerVerb && j.Owner == m.page
+			})
+			if got := execsAfter(t, state, mark); len(got) != 0 || !armed {
+				t.Fatalf("arming execs %q (armed %v)", got, armed)
+			}
+			a.r.PendingCommands() // the wait itself never runs here
+			m.every = 0           // the tick below does not arm again
+			a.tick(m)             // the timer fired
+			drain(a, a.r.PendingCommands())
+			if got := execsAfter(t, state, mark); len(got) != len(c.startup) {
+				t.Fatalf("a tick execs %q, want the startup load %q", got, c.startup)
+			}
+		})
+	}
+}
+
+// A registry file's refreshEvery sets the interval and survives refresh;
+// one that is not a duration is a warning and the default.
+func TestRefreshEveryOverride(t *testing.T) {
+	_, data := registered(t)
+	reg := RegistryIn(data)
+	for _, c := range []struct {
+		every string
+		want  time.Duration
+	}{{"5m", 5 * time.Minute}, {"0s", 0}, {"soon", defaultRefreshEvery}} {
+		e, err := reg.Read("fake")
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.RefreshEvery = c.every
+		if err := reg.write("fake", e); err != nil {
+			t.Fatal(err)
+		}
+		a, err := New(Options{Data: data})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := a.exts[0].every; got != c.want {
+			t.Fatalf("refreshEvery %q: every %s, want %s", c.every, got, c.want)
+		}
+		if c.every == "soon" && !strings.Contains(frame(a), "refreshEvery") {
+			t.Fatalf("no warning:\n%s", frame(a))
+		}
+	}
+	if _, errOut, err := nabe(t, "-data", data, "extension", "refresh", "fake"); err != nil {
+		t.Fatalf("refresh: %v\n%s", err, errOut)
+	}
+	if e, _ := reg.Read("fake"); e.RefreshEvery != "soon" {
+		t.Fatalf("refresh dropped refreshEvery: %q", e.RefreshEvery)
 	}
 }

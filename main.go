@@ -62,6 +62,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	}
 	app := a.commands(words, stdin, stdout, stderr, func() error {
 		a.LoadRows()
+		a.StartRefresh()
 		_, err := tea.NewProgram(a.m).Run()
 		return err
 	})

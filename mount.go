@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/unixsuperhero/ochazuke"
@@ -16,22 +17,49 @@ import (
 // anything: a page titled by the extension name, one list per application
 // noun (planOf), and on a nabe noun <ext>-<noun> one proxy verb per catalog
 // verb. A proxy execs `<bin> NOUN VERB [--target ID] --json ARGS --yes` as
-// pending work; its completion reloads the extension's lists. Rows of a
-// noun with a row source come from `<bin> NOUN VERB --json {}` (loadRows),
-// answering to the noun the verb's catalog rows names (else the noun's own);
+// pending work; its completion refreshes the extension's rows (afterVerb).
+// An extension whose catalog names a state source (state, NOUN.VERB) has
+// every list's rows from one `<bin> NOUN VERB --json {}`, an object keyed
+// by list noun (reload); without one, or for a noun the answer omits, a
+// noun with a row source loads from `<bin> NOUN VERB --json {}` (loadList).
+// Rows answer to the noun the verb's catalog rows names (else the noun's own);
 // any other noun gets one row per verb, enter on the row running it. The
 // catalog's binding rows for mounted nouns are loaded through LoadBindings;
 // a row whose key a framework noun on the row's path already binds is
 // dropped with a warning (a footer notice, Model.Notify).
 
-// mounted is one extension on screen.
+// mounted is one extension on screen. Its lists' rows are the cached
+// state: loaded once at startup, refreshed every `every`, after a verb of
+// the extension and on extension refresh, and drawn as they are (stale
+// rows show at once) in between. Keys, focus and page switches never exec.
 type mounted struct {
 	name   string
 	bin    string
 	page   string
 	lists  []*nounList
 	status string // the last verb's result or error
+	// state is the catalog's state source, NOUN.VERB ("" loads list by
+	// list); stateErr why its last load failed.
+	state    string
+	stateErr string
+	fresh    map[string]bool // extension noun.verb -> declares a boolean fresh
+	every    time.Duration   // the refresh interval; 0 never
 }
+
+// Refreshing.
+const (
+	// defaultRefreshEvery is the refresh interval without a registry
+	// file's refreshEvery.
+	defaultRefreshEvery = 60 * time.Second
+	// refreshVerb and timerVerb are the verbs background loads and the
+	// refresh timer run under: no operation has them, so the jobs ticker
+	// leaves them off; the page says "refreshing" while a load runs.
+	refreshVerb = "refresh"
+	timerVerb   = "refresh-timer"
+	// freshParam is the boolean an explicit refresh passes to a row or
+	// state source that declares it (an extension's own cache bypass).
+	freshParam = "fresh"
+)
 
 // nounList is the list of one mounted noun.
 type nounList struct {
@@ -96,9 +124,30 @@ func (a *App) warn(format string, args ...any) {
 // no list of its own: its verbs answer on those rows.
 func (a *App) mount(name string, e Entry) error {
 	r := a.r
-	m := &mounted{name: name, bin: e.Bin, page: "ext/" + name}
+	m := &mounted{name: name, bin: e.Bin, page: "ext/" + name, state: e.Catalog.State, fresh: map[string]bool{}, every: defaultRefreshEvery}
 	if _, err := r.AddPage(m.page, name, a.renderMounted(m)); err != nil {
 		return err
+	}
+	if e.RefreshEvery != "" {
+		if d, err := time.ParseDuration(e.RefreshEvery); err != nil || d < 0 {
+			a.warn("%s: refreshEvery %q is not a duration (0s or more); refreshing every %s", name, e.RefreshEvery, defaultRefreshEvery)
+		} else {
+			m.every = d
+		}
+	}
+	stateFound := false
+	for _, n := range e.Catalog.Nouns {
+		for _, v := range n.Verbs {
+			key := n.Name + "." + v.Name
+			stateFound = stateFound || key == m.state
+			if v.Params[freshParam].Type == "boolean" {
+				m.fresh[key] = true
+			}
+		}
+	}
+	if m.state != "" && !stateFound {
+		a.warn("%s: state source %s is not in the catalog; loading list by list", name, m.state)
+		m.state = ""
 	}
 	p := planOf(e.Catalog)
 	mountedNouns := map[string]string{}
@@ -343,7 +392,7 @@ func (a *App) proxy(m *mounted, noun, verb string) ochazuke.AppHandler {
 		}, func(v any, err error) {
 			m.status = resultLine(noun+" "+verb, v, err)
 			if !a.sync { // the CLI shows no lists
-				a.loadRows(m)
+				a.afterVerb(m, noun)
 			}
 		})
 	}
@@ -367,45 +416,170 @@ func resultLine(what string, v any, err error) string {
 	return what + ": " + string(data)
 }
 
-// LoadRows schedules the row loads of every mounted extension.
+// LoadRows schedules the first load of every mounted extension: one
+// state exec for an extension with a state source, else one per list.
 func (a *App) LoadRows() {
 	for _, m := range a.exts {
-		a.loadRows(m)
+		a.reload(m, false)
 	}
 }
 
-// loadRows reloads every list of m with a row source, each as a
-// job in the list's rows slot (a newer load replaces an older one).
-func (a *App) loadRows(m *mounted) {
+// StartRefresh arms every extension's refresh timer (the TUI only: the
+// CLI and --smoke settle their jobs and would wait on it).
+func (a *App) StartRefresh() {
+	for _, m := range a.exts {
+		a.arm(m)
+	}
+}
+
+// arm schedules m's next timed refresh: a quiet job that waits m.every,
+// then reloads m and arms again (tick).
+func (a *App) arm(m *mounted) {
+	if m.every <= 0 {
+		return
+	}
+	every := m.every
+	wait := func(ctx context.Context) (any, error) {
+		select {
+		case <-time.After(every):
+			return nil, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	res := ochazuke.Pending(wait).Replacing("timer").Then(func(_ ochazuke.Ctx, _ any, err error) {
+		if err == nil {
+			a.tick(m)
+		}
+	})
+	if _, err := a.r.Launch(m.page, timerVerb, res, ochazuke.Ctx{Runtime: a.r}); err != nil {
+		m.stateErr = err.Error()
+	}
+}
+
+// tick is one timed refresh: reload, then wait again.
+func (a *App) tick(m *mounted) {
+	a.reload(m, false)
+	a.arm(m)
+}
+
+// afterVerb refreshes what a verb of noun may have changed: the state,
+// else only the lists that hold the noun's rows.
+func (a *App) afterVerb(m *mounted, noun string) {
+	if m.state != "" {
+		a.reload(m, false)
+		return
+	}
+	local := localNoun(m.name, noun)
 	for _, l := range m.lists {
-		if l.source == "" {
-			continue
+		if l.source != "" && (l.local == local || l.rowNoun == local) {
+			a.loadList(m, l, false)
 		}
-		fetch := func(ctx context.Context) (any, error) {
-			out, err := execBin(ctx, m.bin, l.noun, l.source, "--json", "{}")
-			if err != nil {
-				return nil, err
+	}
+}
+
+// reload refreshes every list of m: one state exec whose answer fills each
+// list by its noun (a noun the answer omits loads on its own), else one
+// row-source exec per list. fresh asks a source that declares it to skip
+// its cache.
+func (a *App) reload(m *mounted, fresh bool) {
+	if m.state == "" {
+		for _, l := range m.lists {
+			if l.source != "" {
+				a.loadList(m, l, fresh)
 			}
-			return decoded(out), nil
 		}
-		apply := func(v any, err error) {
-			if err == nil {
-				err = a.setRows(l, v)
+		return
+	}
+	noun, verb, _ := strings.Cut(m.state, ".")
+	args := m.args(m.state, fresh)
+	a.load(m.page, func(ctx context.Context) (any, error) {
+		out, err := execBin(ctx, m.bin, noun, verb, "--json", args)
+		if err != nil {
+			return nil, err
+		}
+		return decoded(out), nil
+	}, func(v any, err error) {
+		m.stateErr = ""
+		if err != nil {
+			m.stateErr = err.Error()
+			return
+		}
+		state, ok := v.(map[string]any)
+		if !ok {
+			m.stateErr = fmt.Sprintf("%s: want a JSON object of rows by noun, got %T", m.state, v)
+			return
+		}
+		for _, l := range m.lists {
+			if l.source == "" {
+				continue
+			}
+			rows, ok := state[l.noun]
+			if !ok {
+				a.loadList(m, l, fresh)
+				continue
 			}
 			l.err = ""
-			if err != nil {
+			if err := a.setRows(l, rows); err != nil {
 				l.err = err.Error()
 			}
 		}
-		if a.sync {
-			apply(fetch(context.Background()))
-			continue
+	})
+}
+
+// args is the --json of a source exec: {"fresh": true} on an explicit
+// refresh of a source that declares fresh, else {}.
+func (m *mounted) args(key string, fresh bool) string {
+	if fresh && m.fresh[key] {
+		return `{"` + freshParam + `":true}`
+	}
+	return "{}"
+}
+
+// loadList reloads one list from its own row source.
+func (a *App) loadList(m *mounted, l *nounList, fresh bool) {
+	args := m.args(l.noun+"."+l.source, fresh)
+	a.load(l.id, func(ctx context.Context) (any, error) {
+		out, err := execBin(ctx, m.bin, l.noun, l.source, "--json", args)
+		if err != nil {
+			return nil, err
 		}
-		res := ochazuke.Pending(fetch).Replacing("rows").Then(func(_ ochazuke.Ctx, v any, err error) { apply(v, err) })
-		if _, err := a.r.Launch(l.id, l.local+"."+l.source, res, ochazuke.Ctx{Runtime: a.r}); err != nil {
+		return decoded(out), nil
+	}, func(v any, err error) {
+		if err == nil {
+			err = a.setRows(l, v)
+		}
+		l.err = ""
+		if err != nil {
 			l.err = err.Error()
 		}
+	})
+}
+
+// load runs fetch as a quiet job in owner's rows slot (a newer load
+// replaces an older one) and apply on its completion; inline in sync mode.
+func (a *App) load(owner string, fetch func(context.Context) (any, error), apply func(any, error)) {
+	if a.sync {
+		apply(fetch(context.Background()))
+		return
 	}
+	res := ochazuke.Pending(fetch).Replacing("rows").Then(func(_ ochazuke.Ctx, v any, err error) { apply(v, err) })
+	if _, err := a.r.Launch(owner, refreshVerb, res, ochazuke.Ctx{Runtime: a.r}); err != nil {
+		apply(nil, err)
+	}
+}
+
+// refreshing reports whether a load of m runs.
+func (a *App) refreshing(m *mounted) bool {
+	for _, j := range a.r.Jobs() {
+		if j.State != ochazuke.JobRunning || j.Verb != refreshVerb {
+			continue
+		}
+		if j.Owner == m.page || slices.ContainsFunc(m.lists, func(l *nounList) bool { return l.id == j.Owner }) {
+			return true
+		}
+	}
+	return false
 }
 
 // setRows turns a list answer (a JSON array) into rows of the list's row
@@ -462,8 +636,10 @@ func rowOf(value any) (string, string) {
 
 // renderMounted is an extension page: each list under its heading, in the
 // catalog's noun order (the order mount made them), and the last verb's
-// status (mount warnings are footer notices). Taller content scrolls (pgup
-// and pgdown). Every list is drawn through View, an empty one at height 0,
+// status (mount warnings are footer notices), "refreshing" while a load
+// runs. A list draws at most a screen of rows (List.View scrolls it to the
+// selection), so a frame formats what can show, not every row of a
+// 1,800-row list. Taller content scrolls (pgup and pgdown). Every list is drawn through View, an empty one at height 0,
 // so the framework's drawing order (}, tab, j/k spilling from list to list)
 // is the order on screen.
 func (a *App) renderMounted(m *mounted) func(*ochazuke.Runtime, int, int) ochazuke.Block {
@@ -477,12 +653,14 @@ func (a *App) renderMounted(m *mounted) func(*ochazuke.Runtime, int, int) ochazu
 				head = l.noun + ": " + l.err
 			}
 			parts = append(parts, s.Muted.Render(ansi.Truncate(head, width, "…")))
-			if rows := strings.TrimRight(l.list.View(width, n), "\n"); n > 0 {
+			if rows := strings.TrimRight(l.list.View(width, min(n, max(1, height-2))), "\n"); n > 0 {
 				parts = append(parts, rows)
 			}
 		}
-		if m.status != "" {
-			parts = append(parts, s.Muted.Render(ansi.Truncate(m.status, width, "…")))
+		for _, line := range []string{map[bool]string{true: "refreshing…"}[a.refreshing(m)], m.stateErr, m.status} {
+			if line != "" {
+				parts = append(parts, s.Muted.Render(ansi.Truncate(line, width, "…")))
+			}
 		}
 		return ochazuke.Text(strings.Join(parts, "\n"))
 	}
