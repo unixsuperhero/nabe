@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -21,19 +22,25 @@ import (
 	"github.com/unixsuperhero/oden"
 )
 
+// prog is the name nabe was invoked by: nabe, or o-nabe / o-tui when it is
+// installed under the o root, so help and errors say what the user typed.
+var prog = filepath.Base(os.Args[0])
+
 func main() {
 	if err := run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
-		os.Exit(oden.Report(os.Stderr, "nabe", err))
+		os.Exit(oden.Report(os.Stderr, prog, err))
 	}
 }
 
-const usage = "usage: nabe [-data DIR] [--smoke] NOUN VERB [ARG...] [--target ID] [--json '{...}'] [--ARG VALUE] [--yes]\n(operations list prints every NOUN VERB and its parameters)"
+func usage() string {
+	return "usage: " + prog + " [-data DIR] [--smoke] NOUN VERB [ARG...] [--target ID] [--json '{...}'] [--ARG VALUE] [--yes]\n(operations list prints every NOUN VERB and its parameters)"
+}
 
 // run is the TUI with no words, one frame with --smoke, else one command
 // resolved by oden: a builtin (help, commands, which), catalog, a noun
 // (extension, or a mounted <ext>-<noun>) or a nabe-<word> on PATH.
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
-	flags := flag.NewFlagSet("nabe", flag.ContinueOnError)
+	flags := flag.NewFlagSet(prog, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	data := flags.String("data", DefaultDataDir(), "nabe data directory; the registry is DIR/catalogs")
 	smoke := flags.Bool("smoke", false, "Mount the registry, load the rows, render one 80x24 frame to stdout and exit")
@@ -68,9 +75,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 // runtime and catalog (ochazuke/cli.Mount), Default the TUI or the shell.
 // Positional words after NOUN VERB fill the verb's parameters.
 func (a *App) commands(words []string, stdin io.Reader, stdout, stderr io.Writer, tui func() error, opts ...oden.Option) *oden.App {
-	app := oden.New("nabe", nil, append([]oden.Option{oden.WithBuiltins(), oden.WithStdio(stdin, stdout, stderr)}, opts...)...)
-	sh := ocli.New(a.r, "nabe", stdin, stdout, stderr)
-	sh.Usage = usage
+	app := oden.New(prog, nil, append([]oden.Option{oden.WithBuiltins(), oden.WithStdio(stdin, stdout, stderr)}, opts...)...)
+	sh := ocli.New(a.r, prog, stdin, stdout, stderr)
+	sh.Usage = usage()
 	sh.Owners = a.owners
 	app.Default = func(ctx context.Context, words []string) error {
 		if len(words) == 0 {

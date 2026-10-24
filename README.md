@@ -5,8 +5,11 @@ A host for ochazuke extensions. nabe knows one noun, `extension`; everything els
 ## Install
 
 ```sh
-go install github.com/unixsuperhero/nabe@latest   # or: go build -o ~/go/bin/nabe .
+go build -o ~/bin/o-nabe . && ln -sf ~/bin/o-nabe ~/bin/o-tui   # `o nabe` and `o tui` both open it
+go build -o ~/bin/nabe .                                        # optional bare name
 ```
+
+nabe reads its own program name, so help and errors say `o-tui`, `o-nabe` or `nabe` as invoked. The `o` root (`~/proj/oden/cmd/o`) has no knowledge of nabe; it only finds `o-tui` on PATH.
 
 Until ochazuke and oden are tagged, `go.mod` replaces them with local checkouts in `~/proj`.
 
