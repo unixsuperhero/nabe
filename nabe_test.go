@@ -364,3 +364,44 @@ func TestListVerbRowsAnswerToTheDeclaredNoun(t *testing.T) {
 		t.Fatalf("calls after o: %q", got)
 	}
 }
+
+// The page draws its lists in the catalog's noun order (fake-catalog.json
+// declares item, tool, projects, which is neither sorted nor rows-first),
+// and } and j walk them in that order: j from an item list's last row
+// enters the next list, and the page's last stop stays put.
+func TestListsDrawAndWalkInCatalogOrder(t *testing.T) {
+	a, _ := tui(t)
+	view := frame(a)
+	var at []int
+	for _, head := range []string{"item (2)", "tool (2)", "projects (1)"} {
+		at = append(at, strings.Index(view, head))
+	}
+	if at[0] < 0 || at[0] >= at[1] || at[1] >= at[2] {
+		t.Fatalf("headings not in catalog order (item, tool, projects) %v:\n%s", at, view)
+	}
+	focused := func() string {
+		for _, noun := range []string{"item", "tool", "projects"} {
+			if a.r.List("ext/fake/" + noun).Focused() {
+				return noun
+			}
+		}
+		return a.r.Focus
+	}
+	key := func(k string) tea.KeyPressMsg {
+		if k == "}" || k == "j" || k == "k" {
+			return tea.KeyPressMsg{Code: rune(k[0]), Text: k}
+		}
+		t.Fatalf("key %q", k)
+		return tea.KeyPressMsg{}
+	}
+	for _, step := range []struct{ key, want string }{{"}", "tool"}, {"}", "projects"}, {"}", "item"}, {"j", "item"}, {"j", "tool"}, {"k", "item"}, {"}", "tool"}, {"j", "tool"}, {"j", "projects"}, {"j", "projects"}} {
+		drain(a, press(a, key(step.key)))
+		frame(a)
+		if got := focused(); got != step.want {
+			t.Fatalf("%s: focus %q (%s), want %s", step.key, got, a.r.Focus, step.want)
+		}
+	}
+	if a.r.Focus != "ext/fake/projects/p1" {
+		t.Fatalf("the page's last stop moved: %q", a.r.Focus)
+	}
+}

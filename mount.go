@@ -169,16 +169,6 @@ func (a *App) mount(name string, e Entry) error {
 			homes[noun] = homes[source]
 		}
 	}
-	// Lists with rows first: they hold the extension's data.
-	slices.SortStableFunc(m.lists, func(x, y *nounList) int {
-		switch {
-		case (x.source == "") == (y.source == ""):
-			return 0
-		case x.source != "":
-			return -1
-		}
-		return 1
-	})
 	a.loadBindings(m, e.Catalog.Bindings, mountedNouns, homes)
 	a.exts = append(a.exts, m)
 	return nil
@@ -470,9 +460,12 @@ func rowOf(value any) (string, string) {
 	return id, label
 }
 
-// renderMounted is an extension page: each list under its heading and the
-// last verb's status (mount warnings are footer notices). Taller content
-// scrolls (pgup and pgdown).
+// renderMounted is an extension page: each list under its heading, in the
+// catalog's noun order (the order mount made them), and the last verb's
+// status (mount warnings are footer notices). Taller content scrolls (pgup
+// and pgdown). Every list is drawn through View, an empty one at height 0,
+// so the framework's drawing order (}, tab, j/k spilling from list to list)
+// is the order on screen.
 func (a *App) renderMounted(m *mounted) func(*ochazuke.Runtime, int, int) ochazuke.Block {
 	return func(_ *ochazuke.Runtime, width, height int) ochazuke.Block {
 		s := ochazuke.NewStyles(*a.m.Appearance)
@@ -484,8 +477,8 @@ func (a *App) renderMounted(m *mounted) func(*ochazuke.Runtime, int, int) ochazu
 				head = l.noun + ": " + l.err
 			}
 			parts = append(parts, s.Muted.Render(ansi.Truncate(head, width, "…")))
-			if n > 0 {
-				parts = append(parts, strings.TrimRight(l.list.View(width, n), "\n"))
+			if rows := strings.TrimRight(l.list.View(width, n), "\n"); n > 0 {
+				parts = append(parts, rows)
 			}
 		}
 		if m.status != "" {
