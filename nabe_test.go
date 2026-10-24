@@ -192,8 +192,8 @@ func TestTUIMountsThePageWithTheListRows(t *testing.T) {
 		t.Fatalf("page %q", a.r.Page)
 	}
 	l := a.r.List("ext/fake/item")
-	if sel, ok := l.Selected(); !ok || sel.ID != "ext/fake/item/a1" || sel.Noun != "fake-item" || a.targets[sel.ID] != "a1" {
-		t.Fatalf("selected %+v, targets %v", sel, a.targets)
+	if sel, ok := l.Selected(); !ok || sel.ID != "ext/fake/item/a1" || sel.Noun != "fake-item" || sel.Data != "a1" || a.r.Instances[sel.ID].Data != "a1" {
+		t.Fatalf("selected %+v", sel)
 	}
 	if a.r.Focus != "ext/fake/item/a1" {
 		t.Fatalf("focus %q", a.r.Focus)

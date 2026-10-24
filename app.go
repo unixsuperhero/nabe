@@ -26,7 +26,6 @@ type App struct {
 	sync bool
 
 	exts     []*mounted        // one per registry file that mounted
-	targets  map[string]string // row instance id -> the extension's own id for --target
 	owners   map[string]string // noun -> the instance a CLI command of it acts for
 	warnings []string          // mount problems, shown on the pages and in the footer
 
@@ -49,7 +48,7 @@ const (
 // extensions page. The first extension page opens when there is one.
 func New(opts Options) (*App, error) {
 	r := ochazuke.NewRuntime()
-	a := &App{reg: RegistryIn(opts.Data), sync: opts.Sync, targets: map[string]string{}, owners: map[string]string{}, r: r, m: ochazuke.NewModel(r)}
+	a := &App{reg: RegistryIn(opts.Data), sync: opts.Sync, owners: map[string]string{}, r: r, m: ochazuke.NewModel(r)}
 	a.m.Title = "nabe"
 	a.defineExtension()
 	if err := a.mountAll(); err != nil {

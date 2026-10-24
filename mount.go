@@ -273,7 +273,7 @@ func (a *App) proxy(m *mounted, noun, verb string) ochazuke.AppHandler {
 	return func(c ochazuke.Ctx) ochazuke.Result {
 		args := []string{noun, verb}
 		if c.Instance != nil {
-			if target, ok := a.targets[c.Instance.ID]; ok {
+			if target, ok := c.Instance.Data.(string); ok && target != "" {
 				args = append(args, "--target", target)
 			}
 		}
@@ -361,7 +361,7 @@ func (a *App) loadRows(m *mounted) {
 
 // setRows turns a list answer (a JSON array) into rows of the list's noun.
 // Row instance ids are prefixed with the list id, so two extensions'
-// rows never meet; targets maps them back.
+// rows never meet; each row's Data is the extension's own id (--target).
 func (a *App) setRows(l *nounList, v any) error {
 	values, ok := v.([]any)
 	if !ok {
@@ -373,27 +373,16 @@ func (a *App) setRows(l *nounList, v any) error {
 	}
 	items := make([]ochazuke.ListItem, 0, len(values))
 	seen := map[string]bool{}
-	ids := map[string]string{}
 	for _, value := range values {
 		id, label := rowOf(value)
 		if id == "" || seen[id] {
 			continue
 		}
 		seen[id] = true
-		local := l.id + "/" + id
-		ids[local] = id
-		items = append(items, ochazuke.ListItem{ID: local, Label: label, Noun: l.local})
+		items = append(items, ochazuke.ListItem{ID: l.id + "/" + id, Label: label, Noun: l.local, Data: id})
 	}
 	if err := l.list.SetItems(items); err != nil {
 		return err
-	}
-	for local := range a.targets {
-		if strings.HasPrefix(local, l.id+"/") {
-			delete(a.targets, local)
-		}
-	}
-	for local, id := range ids {
-		a.targets[local] = id
 	}
 	l.count = len(items)
 	return nil
