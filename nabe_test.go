@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/unixsuperhero/ochazuke"
+	"github.com/unixsuperhero/ochazuke/cli"
 )
 
 // fake prepares the fake extension's state (two items) and returns the
@@ -152,7 +153,7 @@ func tui(t *testing.T) (*App, string) {
 		t.Fatal(err)
 	}
 	a.LoadRows()
-	if err := a.Settle(); err != nil {
+	if err := cli.Settle(a.r, nil); err != nil {
 		t.Fatal(err)
 	}
 	return a, state

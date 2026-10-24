@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/unixsuperhero/ochazuke"
 )
 
@@ -110,38 +109,6 @@ func (a *App) work(fn func(context.Context) (any, error), then func(any, error))
 			then(v, err)
 		}
 	})
-}
-
-// Settle runs the scheduled work until none is left, delivering every
-// completion on this goroutine as the Bubble Tea loop would (--smoke and
-// tests).
-func (a *App) Settle() error {
-	var errs []error
-	for {
-		cmd := a.r.PendingCommands()
-		if cmd == nil {
-			return errors.Join(errs...)
-		}
-		errs = append(errs, a.deliver(cmd))
-	}
-}
-
-func (a *App) deliver(cmd tea.Cmd) error {
-	switch msg := cmd().(type) {
-	case tea.BatchMsg:
-		var errs []error
-		for _, c := range msg {
-			if c != nil {
-				errs = append(errs, a.deliver(c))
-			}
-		}
-		return errors.Join(errs...)
-	case nil:
-		return nil
-	default:
-		_, err := a.r.Deliver(msg)
-		return err
-	}
 }
 
 // defineExtension is the extension noun: plain application verbs over the

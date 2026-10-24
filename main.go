@@ -56,7 +56,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	}
 	if *smoke {
 		a.LoadRows()
-		if err := a.Settle(); err != nil {
+		if err := ocli.Settle(a.r, nil); err != nil {
 			a.m.Status = err.Error()
 		}
 		a.m.Width, a.m.Height = 80, 24
