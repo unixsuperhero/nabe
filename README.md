@@ -17,6 +17,7 @@ Until ochazuke and oden are tagged, `go.mod` replaces them with local checkouts 
 
 ```sh
 nabe extension register mtm        # resolves mtm on PATH, runs `mtm catalog`, writes the registry file
+nabe extension register o-proj     # a family tool named o-<name> registers as <name> (here: proj)
 nabe ext reg mtm                   # the same, by prefixes
 nabe extension list                # JSON, one row per registry file
 nabe extension refresh [mtm]       # run catalog again (every extension without a name)

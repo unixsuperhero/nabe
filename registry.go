@@ -144,7 +144,8 @@ func (g Registry) Register(ctx context.Context, bin, name string) (Summary, erro
 		return Summary{}, err
 	}
 	if name == "" {
-		name = doc.Name
+		// Family tools are installed as o-<name>; the page is called <name>.
+		name = strings.TrimPrefix(doc.Name, "o-")
 	}
 	if !validName.MatchString(name) {
 		return Summary{}, fmt.Errorf("extension name %q: use lower-case letters, digits and _ (pass --name)", name)
