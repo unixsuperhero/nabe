@@ -2,12 +2,16 @@
 
 The host app (`nabe`, installed as `o-nabe` and `o-tui` under the `o` root). An ochazuke app (`github.com/unixsuperhero/ochazuke`, Bubble Tea v2) with no nouns of its own beyond `extension`: it mounts extension catalogs as pages. Any executable answering `BIN catalog` with the JSON `ochazuke/cli.Catalog` produces (schema 1) becomes a page with lists and verbs; mtm is the first tenant. ochazuke stays a framework (no noun names), mtm stays thin (the slice), nabe hosts. Hot pot: everyone adds to one pot.
 
+## Plans and todos
+
+Family plans, todos and the roadmap live in `~/hub/o-plans/` (`README.md` is the index). Read it before planning work; add or update items there. Do not add a TODO.md or docs/plans/ to this repo.
+
 ## Read in this order
 
 1. This file, then `README.md` for the registry shape and limits.
 2. `../ochazuke/AGENTS.md`, section "Building an application on ochazuke", and `../ochazuke/cli/{shell.go,mount.go,catalog.go}` (the CLI shell, `Mount`, `CatalogDoc`).
 3. `../oden/README.md` (inline commands, `<bin>-<sub>` externals, prefixes).
-4. `../matomeru/docs/plans/cli-extensions.md`: the extension contract this implements on the host side.
+4. `~/hub/o-plans/plans/cli-extensions.md`: the extension contract this implements on the host side.
 
 ## Where does X live
 
