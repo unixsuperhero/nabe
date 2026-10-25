@@ -208,7 +208,11 @@ func (a *App) mount(name string, e Entry) error {
 		if other, ok := mountedNouns[rows]; ok && verb != "" {
 			l.rowNoun = other
 		}
-		list, err := r.AddList(l.id, nil, ochazuke.Parent(m.page), ochazuke.NoSpill())
+		opts := []ochazuke.InstanceOption{ochazuke.Parent(m.page), ochazuke.NoSpill()}
+		if cols := columnsOf(e.Catalog, n.Name, rows, verb); len(cols) > 0 {
+			opts = append(opts, ochazuke.Columns(cols...))
+		}
+		list, err := r.AddList(l.id, nil, opts...)
 		if err != nil {
 			return err
 		}
@@ -251,6 +255,24 @@ func (a *App) mount(name string, e Entry) error {
 	}
 	a.loadBindings(m, e.Catalog.Bindings, mountedNouns, homes)
 	a.exts = append(a.exts, m)
+	return nil
+}
+
+// columnsOf is the table a mounted list draws: the catalog columns of the
+// noun its rows belong to (the row source's rows noun, else the list's own
+// noun). A verb-row list, or a noun without columns, draws its labels.
+func columnsOf(doc cli.CatalogDoc, noun, rows, verb string) []ochazuke.Column {
+	if verb == "" {
+		return nil
+	}
+	if rows == "" {
+		rows = noun
+	}
+	for _, n := range doc.Nouns {
+		if n.Name == rows {
+			return n.Columns
+		}
+	}
 	return nil
 }
 
@@ -657,7 +679,7 @@ func (a *App) stateBatch(m *mounted, st *stateLoad, b stateBatch) {
 			continue
 		}
 		st.seen[row.Noun+"\x00"+row.ID] = true
-		st.items[row.Noun] = append(st.items[row.Noun], ochazuke.ListItem{ID: row.ID, Label: row.Label})
+		st.items[row.Noun] = append(st.items[row.Noun], ochazuke.ListItem{ID: row.ID, Label: row.Label, Cells: row.Cells})
 		touched[row.Noun] = true
 	}
 	for _, l := range m.lists {
@@ -755,7 +777,7 @@ func (a *App) setRows(l *nounList, v any) error {
 	rows := make([]ochazuke.ListItem, 0, len(values))
 	for _, value := range values {
 		id, label := rowOf(value)
-		rows = append(rows, ochazuke.ListItem{ID: id, Label: label})
+		rows = append(rows, ochazuke.ListItem{ID: id, Label: label, Cells: cellsOf(value)})
 	}
 	return a.setItems(l, rows)
 }
@@ -776,9 +798,28 @@ func (a *App) setItems(l *nounList, rows []ochazuke.ListItem) error {
 		if label == "" {
 			label = row.ID
 		}
-		items = append(items, ochazuke.ListItem{ID: l.id + "/" + row.ID, Label: label, Noun: l.rowNoun, Data: row.ID})
+		items = append(items, ochazuke.ListItem{ID: l.id + "/" + row.ID, Label: label, Noun: l.rowNoun, Data: row.ID, Cells: row.Cells})
 	}
 	return l.list.SetItems(items)
+}
+
+// cellsOf reads a row object's cells (an array of strings), else none.
+func cellsOf(value any) []string {
+	obj, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	list, ok := obj["cells"].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, len(list))
+	for i, v := range list {
+		if v != nil {
+			out[i] = fmt.Sprint(v)
+		}
+	}
+	return out
 }
 
 // rowOf reads a row's id and label: an object's first id and label fields

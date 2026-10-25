@@ -242,9 +242,13 @@ type Listing struct {
 	Bin          string    `json:"bin,omitempty"`
 	Version      string    `json:"version,omitempty"`
 	RegisteredAt time.Time `json:"registeredAt,omitzero"`
-	Nouns        int       `json:"nouns"`
-	Verbs        int       `json:"verbs"`
-	Error        string    `json:"error,omitempty"`
+	// RefreshedAt is when the registry file was last written (register,
+	// refresh, order): the catalog's age.
+	RefreshedAt time.Time `json:"refreshedAt,omitzero"`
+	Nouns       int       `json:"nouns"`
+	Verbs       int       `json:"verbs"`
+	Pages       int       `json:"pages"`
+	Error       string    `json:"error,omitempty"`
 }
 
 // List reads every registry file; an unreadable one is listed with its error.
@@ -261,7 +265,11 @@ func (g Registry) List() ([]Listing, error) {
 			continue
 		}
 		p := planOf(e.Catalog)
-		out = append(out, Listing{Name: name, Bin: e.Bin, Version: e.Catalog.Version, RegisteredAt: e.RegisteredAt, Nouns: len(p.Nouns), Verbs: p.verbs()})
+		l := Listing{Name: name, Bin: e.Bin, Version: e.Catalog.Version, RegisteredAt: e.RegisteredAt, Nouns: len(p.Nouns), Verbs: p.verbs(), Pages: len(e.Catalog.Pages)}
+		if info, err := os.Stat(g.path(name)); err == nil {
+			l.RefreshedAt = info.ModTime()
+		}
+		out = append(out, l)
 	}
 	return out, nil
 }

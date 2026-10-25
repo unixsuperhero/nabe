@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/unixsuperhero/ochazuke"
@@ -53,7 +55,7 @@ func New(opts Options) (*App, error) {
 	if _, err := r.AddPage(extensionsPage, "Extensions", a.renderExtensions); err != nil {
 		return nil, err
 	}
-	list, err := r.AddList(extensionsList, nil, ochazuke.Parent(extensionsPage))
+	list, err := r.AddList(extensionsList, nil, ochazuke.Parent(extensionsPage), ochazuke.Columns(extensionColumns...))
 	if err != nil {
 		return nil, err
 	}
@@ -232,21 +234,55 @@ func (a *App) afterRegistry(any, error) {
 	}
 }
 
-// refreshExtensions pushes the registry files to the extensions list.
+// extensionColumns is the extensions page's table: one row per registry
+// file. Narrow, the bin drops first, then the version, the refresh time,
+// pages, and the verb and noun counts last.
+var extensionColumns = []ochazuke.Column{
+	{Title: "name"},
+	{Title: "nouns", Align: ochazuke.AlignRight, Priority: 1},
+	{Title: "verbs", Align: ochazuke.AlignRight, Priority: 1},
+	{Title: "pages", Align: ochazuke.AlignRight, Priority: 2},
+	{Title: "refreshed", Width: len(refreshedLayout), Priority: 3},
+	{Title: "version", Min: 8, Priority: 4},
+	{Title: "bin", Min: 12, Priority: 5},
+}
+
+// refreshedLayout is the refreshed column's time format (local time).
+const refreshedLayout = "2006-01-02 15:04"
+
+// refreshExtensions pushes the registry files to the extensions list. A
+// file that cannot be read shows its error in the bin column.
 func (a *App) refreshExtensions() error {
 	rows, err := a.reg.List()
 	if err != nil {
 		return err
 	}
+	home, _ := os.UserHomeDir()
 	items := make([]ochazuke.ListItem, 0, len(rows))
 	for _, l := range rows {
 		label := fmt.Sprintf("%s  %s  %s  %d nouns, %d verbs", l.Name, l.Version, l.Bin, l.Nouns, l.Verbs)
+		cells := []string{l.Name, strconv.Itoa(l.Nouns), strconv.Itoa(l.Verbs), strconv.Itoa(l.Pages), "", l.Version, tildePath(l.Bin, home)}
+		if !l.RefreshedAt.IsZero() {
+			cells[4] = l.RefreshedAt.Local().Format(refreshedLayout)
+		}
 		if l.Error != "" {
 			label = l.Name + "  error: " + l.Error
+			cells = []string{l.Name, "", "", "", "", "", "error: " + l.Error}
 		}
-		items = append(items, ochazuke.ListItem{ID: l.Name, Label: label, Noun: extensionNoun})
+		items = append(items, ochazuke.ListItem{ID: l.Name, Label: label, Noun: extensionNoun, Cells: cells})
 	}
 	return a.extList.SetItems(items)
+}
+
+// tildePath writes a path under home with ~ for home.
+func tildePath(path, home string) string {
+	if home == "" || path == "" {
+		return path
+	}
+	if rest, ok := strings.CutPrefix(path, strings.TrimSuffix(home, "/")+"/"); ok {
+		return "~/" + rest
+	}
+	return path
 }
 
 func (a *App) renderExtensions(_ *ochazuke.Runtime, width, height int) ochazuke.Block {
@@ -256,5 +292,5 @@ func (a *App) renderExtensions(_ *ochazuke.Runtime, width, height int) ochazuke.
 	if n == 0 {
 		return ochazuke.Text(head + "\n" + "no extensions registered: nabe extension register BIN")
 	}
-	return ochazuke.Text(head + "\n" + strings.TrimRight(a.extList.View(width, max(1, min(n, height-3))), "\n"))
+	return ochazuke.Text(head + "\n" + strings.TrimRight(a.extList.View(width, max(1, min(n+1, height-3))), "\n"))
 }
