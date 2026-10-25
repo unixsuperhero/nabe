@@ -75,13 +75,11 @@ func New(opts Options) (*App, error) {
 	return a, a.focusPage(first)
 }
 
-// focusPage focuses a page's first list: an extension page's lists with
-// rows come first, and an empty list hands the focus to its first row when
-// the rows arrive.
+// focusPage starts an extension in its group navigation list.
 func (a *App) focusPage(page string) error {
 	for _, e := range a.exts {
 		if e.page == page && len(e.lists) > 0 {
-			return e.lists[0].list.Focus()
+			return e.groups.Focus()
 		}
 	}
 	if page == extensionsPage {

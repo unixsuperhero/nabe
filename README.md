@@ -76,6 +76,12 @@ mount("mtm") = {
 }
 ```
 
+## Two-panel navigation
+
+Each extension page has a left-hand **Groups** list in catalog order and a right-hand panel showing only the selected group's rows or verbs. `j`/`k` (or the arrow keys) select a group without running the extension. `enter`, `l` or `right` moves into its contents; `h` or `left` returns to the group list. `tab`/`shift+tab` and `}`/`{` move between the two visible lists, never the hidden groups. Each content list keeps its selection when switching groups. Extension bindings still take precedence over the content list's navigation bindings.
+
+Both panels stay side by side; their lists scroll independently within the available terminal height. Extension tabs and the Extensions registry page are unchanged.
+
 ## When nabe execs
 
 The rows on screen are a cache. nabe runs an extension's bin only:

@@ -165,6 +165,9 @@ func tui(t *testing.T) (*App, string) {
 	if err := cli.Settle(a.r, nil); err != nil {
 		t.Fatal(err)
 	}
+	if err := a.r.List("ext/fake/item").Focus(); err != nil {
+		t.Fatal(err)
+	}
 	return a, state
 }
 
@@ -221,7 +224,7 @@ func TestTUIMountsThePageWithTheListRows(t *testing.T) {
 		t.Fatalf("touch params %+v", p)
 	}
 	view := frame(a)
-	for _, want := range []string{"fake", "item (2)", "alpha", "beta", "tool (2)", "echo (palette: text)  Echo the text", "ping  Answer pong", "projects (1)", "pone", "Extensions"} {
+	for _, want := range []string{"fake", "Groups", "item (2)", "alpha", "beta", "tool", "projects", "Extensions"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("frame lacks %q:\n%s", want, view)
 		}
@@ -368,44 +371,54 @@ func TestListVerbRowsAnswerToTheDeclaredNoun(t *testing.T) {
 	}
 }
 
-// The page draws its lists in the catalog's noun order (fake-catalog.json
-// declares item, tool, projects, which is neither sorted nor rows-first),
-// and } and j walk them in that order: j from an item list's last row
-// enters the next list, and the page's last stop stays put.
-func TestListsDrawAndWalkInCatalogOrder(t *testing.T) {
-	a, _ := tui(t)
-	view := frame(a)
-	var at []int
-	for _, head := range []string{"item (2)", "tool (2)", "projects (1)"} {
-		at = append(at, strings.Index(view, head))
+func TestGroupsSelectTheRightPanelWithoutExecuting(t *testing.T) {
+	a, state := tui(t)
+	if err := a.exts[0].groups.Focus(); err != nil {
+		t.Fatal(err)
 	}
-	if at[0] < 0 || at[0] >= at[1] || at[1] >= at[2] {
-		t.Fatalf("headings not in catalog order (item, tool, projects) %v:\n%s", at, view)
-	}
-	focused := func() string {
-		for _, noun := range []string{"item", "tool", "projects"} {
-			if a.r.List("ext/fake/" + noun).Focused() {
-				return noun
-			}
+	before := len(calls(t, state))
+	check := func(want, absent string) {
+		t.Helper()
+		view := frame(a)
+		if !strings.Contains(view, want) || strings.Contains(view, absent) {
+			t.Fatalf("want %q without %q:\n%s", want, absent, view)
 		}
-		return a.r.Focus
 	}
-	key := func(k string) tea.KeyPressMsg {
-		if k == "}" || k == "j" || k == "k" {
-			return tea.KeyPressMsg{Code: rune(k[0]), Text: k}
-		}
-		t.Fatalf("key %q", k)
-		return tea.KeyPressMsg{}
-	}
-	for _, step := range []struct{ key, want string }{{"}", "tool"}, {"}", "projects"}, {"}", "item"}, {"j", "item"}, {"j", "tool"}, {"k", "item"}, {"}", "tool"}, {"j", "tool"}, {"j", "projects"}, {"j", "projects"}} {
-		drain(a, press(a, key(step.key)))
+	key := func(k rune) {
+		t.Helper()
+		drain(a, press(a, tea.KeyPressMsg{Code: k, Text: string(k)}))
 		frame(a)
-		if got := focused(); got != step.want {
-			t.Fatalf("%s: focus %q (%s), want %s", step.key, got, a.r.Focus, step.want)
-		}
 	}
+	check("alpha", "Answer pong")
+	key('j')
+	check("ping  Answer pong", "alpha")
+	drain(a, press(a, tea.KeyPressMsg{Code: tea.KeyEnter}))
+	frame(a)
+	if !a.r.List("ext/fake/tool").Focused() {
+		t.Fatalf("enter did not enter the tool panel: %s", a.r.Focus)
+	}
+	key('h')
+	key('j')
+	check("pone", "Answer pong")
+	key('l')
 	if a.r.Focus != "ext/fake/projects/p1" {
-		t.Fatalf("the page's last stop moved: %q", a.r.Focus)
+		t.Fatalf("l did not focus the project row: %s", a.r.Focus)
+	}
+	key('}')
+	if !a.exts[0].groups.Focused() {
+		t.Fatalf("tab order reached a hidden list: %s", a.r.Focus)
+	}
+	key('k')
+	check("Answer pong", "pone")
+	key('l')
+	key('j')
+	key('h')
+	key('l')
+	if a.r.Focus != "fake-tool/ping" {
+		t.Fatalf("the content selection was lost: %s", a.r.Focus)
+	}
+	if got := execsAfter(t, state, before); len(got) != 0 {
+		t.Fatalf("group navigation executed the extension: %q", got)
 	}
 }
 
@@ -456,7 +469,7 @@ func TestExecBudget(t *testing.T) {
 			if !slices.Equal(got, c.startup) {
 				t.Fatalf("startup execs %q, want %q", got, c.startup)
 			}
-			if view := frame(a); strings.Contains(view, "loading…") || strings.Contains(view, "refreshing…") || !strings.Contains(view, "alpha") || !strings.Contains(view, "beta") || !strings.Contains(view, "pone") || a.r.List("ext/fake/item").Len() != 2 {
+			if view := frame(a); strings.Contains(view, "loading…") || strings.Contains(view, "refreshing…") || !strings.Contains(view, "alpha") || !strings.Contains(view, "beta") || a.r.List("ext/fake/item").Len() != 2 || a.r.List("ext/fake/projects").Len() != 1 {
 				t.Fatalf("after the load:\n%s", view)
 			}
 

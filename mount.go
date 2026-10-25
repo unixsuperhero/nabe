@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/unixsuperhero/ochazuke"
 	"github.com/unixsuperhero/ochazuke/cli"
@@ -40,6 +41,7 @@ type mounted struct {
 	bin    string
 	page   string
 	lists  []*nounList
+	groups *ochazuke.List
 	status string // the last verb's result or error
 	// state is the catalog's state source, NOUN.VERB ("" loads list by
 	// list); stateErr why its last load failed.
@@ -206,7 +208,7 @@ func (a *App) mount(name string, e Entry) error {
 		if other, ok := mountedNouns[rows]; ok && verb != "" {
 			l.rowNoun = other
 		}
-		list, err := r.AddList(l.id, nil, ochazuke.Parent(m.page))
+		list, err := r.AddList(l.id, nil, ochazuke.Parent(m.page), ochazuke.NoSpill())
 		if err != nil {
 			return err
 		}
@@ -223,6 +225,28 @@ func (a *App) mount(name string, e Entry) error {
 	for noun, source := range listedBy {
 		if _, own := homes[noun]; !own {
 			homes[noun] = homes[source]
+		}
+	}
+	groups := make([]ochazuke.ListItem, 0, len(m.lists))
+	for i, l := range m.lists {
+		groups = append(groups, ochazuke.ListItem{ID: m.page + "/groups/" + l.noun, Label: l.noun, Noun: "page", Data: i})
+	}
+	var err error
+	m.groups, err = r.AddList(m.page+"/groups/", groups, ochazuke.Parent(m.page), ochazuke.NoSpill())
+	if err != nil {
+		return err
+	}
+	for _, item := range groups {
+		l := m.lists[item.Data.(int)]
+		for _, key := range []string{"enter", "l", "right"} {
+			if err := r.Bind(ochazuke.Binding{Instance: item.ID, Mode: normalMode, Keys: key, Request: ochazuke.Request{Noun: "focus", Verb: "next"}}); err != nil {
+				return err
+			}
+		}
+		for _, key := range []string{"h", "left"} {
+			if err := r.Bind(ochazuke.Binding{Instance: l.id, Mode: normalMode, Keys: key, Request: ochazuke.Request{Noun: "focus", Verb: "set", Args: ochazuke.Arguments{"id": item.ID}}}); err != nil {
+				return err
+			}
 		}
 	}
 	a.loadBindings(m, e.Catalog.Bindings, mountedNouns, homes)
@@ -783,38 +807,65 @@ func rowOf(value any) (string, string) {
 	return id, label
 }
 
-// renderMounted is an extension page: each list under its heading, in the
-// catalog's noun order (the order mount made them), and the last verb's
-// status (mount warnings are footer notices), "refreshing" while a load
-// runs. A list draws at most a screen of rows (List.View scrolls it to the
-// selection), so a frame formats what can show, not every row of a
-// 1,800-row list. Taller content scrolls (pgup and pgdown). Every list is drawn through View, an empty one at height 0,
-// so the framework's drawing order (}, tab, j/k spilling from list to list)
-// is the order on screen.
+// renderMounted draws the catalog's groups beside the selected group's cached
+// rows. Only that content list participates in focus navigation.
 func (a *App) renderMounted(m *mounted) func(*ochazuke.Runtime, int, int) ochazuke.Block {
 	return func(_ *ochazuke.Runtime, width, height int) ochazuke.Block {
+		if width <= 0 || height <= 0 {
+			return ochazuke.Block{}
+		}
 		s := ochazuke.NewStyles(*a.m.Appearance)
-		var parts []string
+		layout := ochazuke.Layout{Styles: s}
+		leftWidth := min(28, max(1, (width-1)/3))
+		rightWidth := max(0, width-leftWidth-1)
+		lw, lh := ochazuke.PanelContentSize(leftWidth, height)
+		rw, rh := ochazuke.PanelContentSize(rightWidth, height)
+		selected, ok := m.groups.Selected()
+		var current *nounList
+		if ok {
+			index := selected.Data.(int)
+			current = m.lists[index]
+			// Explicit focus (for example from the palette) reveals its group.
+			for i, l := range m.lists {
+				if l.list.Focused() {
+					m.groups.Move(i - index)
+					current = l
+					break
+				}
+			}
+		}
 		for _, l := range m.lists {
-			n := l.list.Len()
-			head := fmt.Sprintf("%s (%d)", l.noun, n)
-			if l.err != "" {
-				head = l.noun + ": " + l.err
-			}
-			parts = append(parts, s.Muted.Render(ansi.Truncate(head, width, "…")))
-			if rows := strings.TrimRight(l.list.View(width, min(n, max(1, height-2))), "\n"); n > 0 {
-				parts = append(parts, rows)
+			a.r.Instances[l.id].Unfocusable = l != current
+		}
+		left := layout.Panel("Groups", m.groups.View(lw, lh), leftWidth, height, m.groups.Focused())
+		title, body := "Contents", "no groups"
+		busy := ""
+		if a.refreshing(m) {
+			busy = "refreshing…"
+			if !m.loaded {
+				busy = "loading…"
 			}
 		}
-		busy := map[bool]string{true: "refreshing…"}[a.refreshing(m)]
-		if busy != "" && !m.loaded {
-			busy = "loading…" // the lists stay empty until the first rows land
-		}
+		var status []string
 		for _, line := range []string{busy, m.stateErr, m.status} {
 			if line != "" {
-				parts = append(parts, s.Muted.Render(ansi.Truncate(line, width, "…")))
+				status = append(status, s.Muted.Render(ansi.Truncate(line, rw, "…")))
 			}
 		}
-		return ochazuke.Text(strings.Join(parts, "\n"))
+		if current != nil {
+			title = fmt.Sprintf("%s (%d)", current.noun, current.list.Len())
+			if current.err != "" {
+				status = append(status, s.Muted.Render(ansi.Truncate(current.err, rw, "…")))
+			}
+			body = current.list.View(rw, max(0, rh-len(status)))
+			if current.list.Len() == 0 && rh > len(status) {
+				body = s.Muted.Render("no rows")
+			}
+		}
+		if len(status) > 0 {
+			body = strings.TrimRight(body, "\n") + "\n" + strings.Join(status, "\n")
+		}
+		right := layout.Panel(title, body, rightWidth, height, current != nil && current.list.Focused())
+		return ochazuke.Text(lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right))
 	}
 }
