@@ -292,5 +292,5 @@ func (a *App) renderExtensions(_ *ochazuke.Runtime, width, height int) ochazuke.
 	if n == 0 {
 		return ochazuke.Text(head + "\n" + "no extensions registered: nabe extension register BIN")
 	}
-	return ochazuke.Text(head + "\n" + strings.TrimRight(a.extList.View(width, max(1, min(n+1, height-3))), "\n"))
+	return ochazuke.Text(head + "\n" + strings.TrimRight(a.extList.View(width, max(1, min(n+1, height-1))), "\n"))
 }
