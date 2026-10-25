@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/unixsuperhero/ochazuke"
 	"github.com/unixsuperhero/ochazuke/cli"
+	"github.com/unixsuperhero/oden"
 )
 
 // fake prepares the fake extension's state (two items) and returns the
@@ -658,5 +659,13 @@ func TestStateBatchesFillFirstThenSwapOnRefresh(t *testing.T) {
 	a.stateBatch(m, st, stateBatch{done: true})
 	if item.Len() != 1 || projects.Len() != 0 {
 		t.Fatalf("refresh end: item %d projects %d", item.Len(), projects.Len())
+	}
+}
+
+func TestUnknownWordIsNotFound(t *testing.T) {
+	_, data := registered(t)
+	out, errOut, err := nabe(t, "-data", data, "fake-tools", "ping")
+	if oden.ExitCode(err) != 1 || out != "" || !strings.HasPrefix(errOut, prog+": command \"fake-tools\" not found\ndid you mean: fake-tool\n") {
+		t.Fatalf("fake-tools: %v %q\n%s", err, out, errOut)
 	}
 }

@@ -30,7 +30,7 @@ func main() {
 }
 
 func usage() string {
-	return "usage: " + prog + " [-data DIR] [--smoke] NOUN VERB [ARG...] [--target ID] [--json '{...}'] [--ARG VALUE] [--yes]\n(operations list prints every NOUN VERB and its parameters)"
+	return "usage: " + prog + " [-data DIR] [--smoke] NOUN VERB [ARG...] [--target ID] [--json '{...}'] [--ARG VALUE] [--yes]\n" + ocli.UsageHint(prog)
 }
 
 // run is the TUI with no words, one frame with --smoke, else one command
@@ -70,18 +70,19 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 }
 
 // commands is the oden App for one invocation: builtins, every noun of the
-// runtime and catalog (ochazuke/cli.Mount), Default the TUI or the shell.
+// runtime and catalog (ochazuke/cli.Mount), Default the TUI with no words,
+// else oden's not found report for the unknown word.
 // The shell fills a verb's parameters from bare words after NOUN VERB.
 func (a *App) commands(words []string, stdin io.Reader, stdout, stderr io.Writer, tui func() error, opts ...oden.Option) *oden.App {
 	app := oden.New(prog, words, append([]oden.Option{oden.WithBuiltins(), oden.WithStdio(stdin, stdout, stderr)}, opts...)...)
 	sh := ocli.New(a.r, prog, stdin, stdout, stderr)
 	sh.Usage = usage()
 	sh.Owners = a.owners
-	app.Default = func(ctx context.Context, words []string) error {
+	app.Default = func(_ context.Context, words []string) error {
 		if len(words) == 0 {
 			return tui()
 		}
-		return sh.Run(ctx, words)
+		return oden.ErrNotFound
 	}
 	ocli.Mount(app, sh)
 	return app
