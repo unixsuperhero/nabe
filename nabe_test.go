@@ -558,8 +558,10 @@ func TestRefreshEveryOverride(t *testing.T) {
 		if got := a.exts[0].every; got != c.want {
 			t.Fatalf("refreshEvery %q: every %s, want %s", c.every, got, c.want)
 		}
-		if c.every == "soon" && !strings.Contains(frame(a), "refreshEvery") {
-			t.Fatalf("no warning:\n%s", frame(a))
+		// The warning is a notice; the footer shows only the newest one
+		// (ochazuke v0.1.1), so read the notices, not the frame.
+		if c.every == "soon" && !strings.Contains(strings.Join(a.m.Notices, "\n"), "refreshEvery") {
+			t.Fatalf("no warning: %q", a.m.Notices)
 		}
 	}
 	if _, errOut, err := nabe(t, "-data", data, "extension", "refresh", "fake"); err != nil {
