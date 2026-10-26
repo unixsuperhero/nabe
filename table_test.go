@@ -104,3 +104,35 @@ func TestExtensionsPageIsATable(t *testing.T) {
 		t.Fatalf("40: want counts, not the bin:\n%s", frame)
 	}
 }
+
+// An empty table draws its header over "no rows"; an empty list without
+// columns draws only the note.
+func TestEmptyTableKeepsItsHeader(t *testing.T) {
+	a, err := New(Options{Data: withColumns(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := a.exts[0]
+	a.stateBatch(m, &stateLoad{items: map[string][]ochazuke.ListItem{}, seen: map[string]bool{}}, stateBatch{done: true})
+	if err := a.r.List("ext/fake/item").Focus(); err != nil {
+		t.Fatal(err)
+	}
+	view := frame(a)
+	lines := strings.Split(view, "\n")
+	at := -1
+	for i, line := range lines {
+		if strings.Contains(line, "item") && strings.Contains(line, "state") && strings.Contains(line, "where") {
+			at = i
+			break
+		}
+	}
+	if at < 0 || at+1 >= len(lines) || !strings.Contains(lines[at+1], "no rows") || strings.Contains(view, "(empty list)") {
+		t.Fatalf("empty table: want the header over no rows:\n%s", view)
+	}
+	if err := a.r.List("ext/fake/projects").Focus(); err != nil {
+		t.Fatal(err)
+	}
+	if view := frame(a); !strings.Contains(view, "no rows") || strings.Contains(view, "where") {
+		t.Fatalf("empty list without columns:\n%s", view)
+	}
+}

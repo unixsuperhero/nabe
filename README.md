@@ -75,7 +75,7 @@ mount("mtm") = {
   state:    "with a catalog state source: `mtm projects state --json {}` once, answering JSON Lines {noun, id, label} tagged by list noun; each list takes its noun's lines",
   rows:     "without one, or for a noun the state omits, per noun with a row source (the verb declaring rows, else list): `mtm NOUN VERB --json {}`",
   row:      { id: "ext/mtm/projects/p1", label: "pone", noun: "mtm-project", data: "p1" }, // from { id: "p1", name: "pone" }; noun is the verb's rows, else the list's own
-  columns:  "a list whose row noun declares catalog columns is a table (ochazuke.Columns): a header, each row's cells (state lines' or list objects' cells), columns dropped by priority when narrow; without columns, the labels",
+  columns:  "a list whose row noun declares catalog columns is a table (ochazuke.Columns): a header, each row's cells (state lines' or list objects' cells), columns dropped by priority when narrow; without columns, the labels; empty, the header over no rows",
   verbRows: "any other noun no row source lists: one row per verb; enter runs it (not for verbs with required parameters: use the palette)",
   verbs:    "mtm-project.open -> `mtm project open --target <row data> --json '{}' --yes` (pending), then the state reloads (without a state source: only the lists holding that noun's rows)",
   confirm:  "the catalog's template, unchanged ({{label}} reads the row label)",

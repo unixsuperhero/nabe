@@ -923,7 +923,13 @@ func (a *App) renderMounted(m *mounted) func(*ochazuke.Runtime, int, int) ochazu
 			}
 			body = current.list.View(rw, max(0, rh-len(status)))
 			if current.list.Len() == 0 && rh > len(status) {
+				// An empty table keeps its header (the first line of its
+				// view when there is room for two) over the note.
 				body = s.Muted.Render("no rows")
+				if len(current.list.Columns()) > 0 && rh-len(status) > 1 {
+					head, _, _ := strings.Cut(current.list.View(rw, 2), "\n")
+					body = head + "\n" + body
+				}
 			}
 		}
 		if len(status) > 0 {
