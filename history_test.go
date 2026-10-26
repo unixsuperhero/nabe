@@ -11,13 +11,14 @@ import (
 
 // A mounted verb records the history kind its catalog declares (tool ping
 // is a fetch); one that declares none stays the framework default, a
-// change.
+// change. nabe's own extension list is a fetch.
 func TestMountedVerbsKeepTheCatalogHistory(t *testing.T) {
 	a, _ := tui(t)
 	for key, want := range map[string]string{
 		"fake-tool.ping":    ochazuke.HistoryFetch,
 		"fake-tool.voices":  ochazuke.HistoryChange,
 		"fake-item.touch":   ochazuke.HistoryChange,
+		"extension.list":    ochazuke.HistoryFetch,
 		"extension.refresh": ochazuke.HistoryChange,
 	} {
 		if got := a.r.Operations[key].HistoryKindOf(); got != want {
@@ -56,5 +57,23 @@ func TestUnknownCatalogHistoryIsANotice(t *testing.T) {
 	}
 	if !slices.ContainsFunc(a.m.Notices, func(n string) bool { return strings.Contains(n, `history "poll"`) }) {
 		t.Fatalf("notices %v", a.m.Notices)
+	}
+}
+
+// Background loads (startup, the refresh timer, after a verb) go through
+// Runtime.Launch and record nothing: only what the user ran is history.
+func TestBackgroundLoadsRecordNoHistory(t *testing.T) {
+	a, _ := tui(t)
+	if h := a.r.History(0); len(h) != 0 {
+		t.Fatalf("startup loads recorded %+v", h)
+	}
+	m := a.exts[0]
+	m.every = 0 // tick re-arms; with no wait it does not, so Settle returns
+	a.tick(m)
+	if err := cli.Settle(a.r, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range a.r.History(0) {
+		t.Errorf("the timed refresh recorded %s (%s)", e.Request.Key(), e.Kind)
 	}
 }

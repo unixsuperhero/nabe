@@ -151,7 +151,7 @@ func (a *App) defineExtension() {
 		Verb("unregister", a.unregister, "Remove an extension's registry file").Confirm("Unregister {{id}}?").
 		Verb("refresh", a.refresh, "Run catalog again for one extension, or every one").
 		Verb("order", a.order, "Place an extension's page: pages sort by order, then registration (restart nabe to see it)").
-		Verb("list", a.list, "List the registry files as JSON").
+		Verb("list", a.list, "List the registry files as JSON").Fetch().
 		Mode("normal").
 		Bind("r", ochazuke.Do("extension.refresh")).
 		Bind("d", ochazuke.Do("extension.unregister"))
