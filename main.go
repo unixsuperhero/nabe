@@ -93,6 +93,7 @@ func (a *App) commands(words []string, stdin io.Reader, stdout, stderr io.Writer
 	sh := ocli.New(a.r, prog, stdin, stdout, stderr)
 	sh.Usage = usage()
 	sh.Owners = a.owners
+	sh.Reveal = func(target string) error { return a.reveal(words, target) }
 	app.Default = func(_ context.Context, words []string) error {
 		if len(words) == 0 {
 			return tui()

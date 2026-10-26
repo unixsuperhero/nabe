@@ -27,6 +27,7 @@ type App struct {
 
 	exts   []*mounted        // one per registry file that mounted
 	owners map[string]string // noun -> the instance a CLI command of it acts for
+	homes  map[string]string // mounted noun -> the list its rows live in
 
 	r       *ochazuke.Runtime
 	m       *ochazuke.Model
@@ -46,7 +47,7 @@ const (
 // extensions page. The first extension page opens when there is one.
 func New(opts Options) (*App, error) {
 	r := ochazuke.NewRuntime()
-	a := &App{reg: RegistryIn(opts.Data), sync: opts.Sync, owners: map[string]string{}, r: r, m: ochazuke.NewModel(r)}
+	a := &App{reg: RegistryIn(opts.Data), sync: opts.Sync, owners: map[string]string{}, homes: map[string]string{}, r: r, m: ochazuke.NewModel(r)}
 	a.m.Title = "nabe"
 	a.defineExtension()
 	if err := a.mountAll(); err != nil {

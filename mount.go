@@ -239,6 +239,9 @@ func (a *App) mount(name string, e Entry) error {
 			homes[noun] = homes[source]
 		}
 	}
+	for noun, list := range homes {
+		a.homes[mountedNouns[noun]] = list
+	}
 	groups := make([]ochazuke.ListItem, 0, len(m.lists))
 	for i, l := range m.lists {
 		groups = append(groups, ochazuke.ListItem{ID: m.page + "/groups/" + l.noun, Label: l.noun, Noun: "page", Data: i})

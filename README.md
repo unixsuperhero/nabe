@@ -34,6 +34,8 @@ A lone word that names a page (a registered extension's name, or `extensions`) o
 
 `register` prints a summary such as `mtm: 11 nouns, 27 verbs, 3 pages (framework nouns skipped: 28)`. Run `MTM_SERVER=default nabe ...` to keep mtm from starting its own daemon.
 
+A mounted verb takes `--target` from the CLI as the extension's own id (`nabe mtm-project open --target p1` runs `mtm project open --target p1 --json {} --yes`) or as the row's nabe id (`--target ext/mtm/projects/p1`). No rows are loaded from the CLI, so nabe stands in a row for the target (`cli.Shell.Reveal`); an id that is also one of nabe's own instance ids (a page, a list, `app`) needs the nabe-id form.
+
 `nabe help` lists the commands: oden's builtins, `catalog`, `extension`, and each mounted noun (`nabe mtm-projects list` runs `mtm projects list` through the proxy). Bare words after NOUN VERB fill the verb's parameters, required first, then by name (`nabe ext reg mtm other` registers mtm as `other`).
 
 `catalog` prints nabe's own catalog under the name it was invoked by: `o-nabe catalog` and `o-tui catalog` answer `"name": "o-nabe"` and `"name": "o-tui"`, so the o family can mount nabe like any other extension.
@@ -120,5 +122,4 @@ nabe reads the stream as it arrives (`cli.NewRowReader`: batches of 200 rows or 
 - A catalog without `rows` keeps the old shape: rows of `projects list` are `mtm-projects` rows, and a noun such as `project` sits on verb rows without a target.
 - Parameter pick lists (`source`, an extension `NOUN.VERB`) reach the palette and the CLI only when the source's noun is mounted (else a notice drops it). From the CLI the parameter names the mounted proxy (`help` says `choices from: mtm-projects.list`) and a value is checked against its answer. In the TUI the choices are a cache: the rows of the list that source fills, else one quiet `BIN NOUN VERB --json {}` with every row load (startup, the timer, `extension refresh`; not after a verb). Until it lands any value is accepted; the pick list shows ids, not labels.
 - Pattern rows (`digit`, `any`) are not compared for collisions; only the first key of a sequence is.
-- From nabe's CLI, a mounted verb runs without `--target` (nabe's instance ids are not the extension's); use the extension's own CLI to target a row.
 - Exec only, one process per call, 60 s per call.
