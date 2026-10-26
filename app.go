@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/unixsuperhero/ochazuke"
 )
@@ -294,7 +295,7 @@ func (a *App) refreshExtensions() error {
 	items := make([]ochazuke.ListItem, 0, len(rows))
 	for _, l := range rows {
 		label := fmt.Sprintf("%s  %s  %s  %d nouns, %d verbs", l.Name, l.Version, l.Bin, l.Nouns, l.Verbs)
-		cells := []string{l.Name, strconv.Itoa(l.Nouns), strconv.Itoa(l.Verbs), strconv.Itoa(l.Pages), "", l.Version, tildePath(l.Bin, home)}
+		cells := []string{l.Name, strconv.Itoa(l.Nouns), strconv.Itoa(l.Verbs), strconv.Itoa(l.Pages), "", l.Version, binCell(l.Bin, home)}
 		if !l.RefreshedAt.IsZero() {
 			cells[4] = l.RefreshedAt.Local().Format(refreshedLayout)
 		}
@@ -305,6 +306,43 @@ func (a *App) refreshExtensions() error {
 		items = append(items, ochazuke.ListItem{ID: l.Name, Label: label, Noun: extensionNoun, Cells: cells})
 	}
 	return a.extList.SetItems(items)
+}
+
+// binCellMax is the most a bin cell takes before its middle directories
+// are elided.
+const binCellMax = 40
+
+// binCell is a bin as the extensions table shows it: ~ for home, and a
+// long path elided in the middle (its first directory, then …, then as
+// many trailing elements as fit), so the executable's name survives the
+// table cutting the cell at its right edge. A path whose base alone is
+// over the budget keeps its first directory and base.
+func binCell(path, home string) string {
+	path = tildePath(path, home)
+	if utf8.RuneCountInString(path) <= binCellMax {
+		return path
+	}
+	parts := strings.Split(path, "/")
+	head := parts[0] // "~", or "" for an absolute path
+	rest := parts[1:]
+	if head == "" && len(rest) > 0 {
+		head, rest = "/"+rest[0], rest[1:]
+	}
+	if len(rest) < 2 {
+		return path
+	}
+	tail := rest[len(rest)-1]
+	for i := len(rest) - 2; i >= 0; i-- {
+		next := rest[i] + "/" + tail
+		if utf8.RuneCountInString(head+"/…/"+next) > binCellMax {
+			break
+		}
+		tail = next
+	}
+	if tail == strings.Join(rest, "/") {
+		return path
+	}
+	return head + "/…/" + tail
 }
 
 // tildePath writes a path under home with ~ for home.

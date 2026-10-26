@@ -130,3 +130,22 @@ func TestEmptyTableKeepsItsHeader(t *testing.T) {
 		t.Fatalf("empty list without columns:\n%s", view)
 	}
 }
+
+// A long bin keeps its name: the middle directories give way, so the
+// table's right-edge cut never takes the executable (the extensions page
+// read "/private/tmp/…/f9…" from a checkout under a long temp path).
+func TestBinCellKeepsTheName(t *testing.T) {
+	home := "/Users/me"
+	for _, c := range []struct{ in, want string }{
+		{"/usr/local/bin/mtm", "/usr/local/bin/mtm"},
+		{"/Users/me/bin/mtm", "~/bin/mtm"},
+		{"/private/tmp/claude-501/-Users-me-proj-ochazuke/f90e7056-ed3b/scratchpad/nabe/testdata/fake-ext", "/private/…/nabe/testdata/fake-ext"},
+		{"/Users/me/proj/a-very-long-directory-name/another-long-directory/testdata/fake-ext", "~/…/testdata/fake-ext"},
+		{"/opt/" + strings.Repeat("x", 50), "/opt/" + strings.Repeat("x", 50)},
+		{"/a/" + strings.Repeat("d", 40) + "/" + strings.Repeat("n", 45), "/a/…/" + strings.Repeat("n", 45)},
+	} {
+		if got := binCell(c.in, home); got != c.want {
+			t.Errorf("binCell(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
