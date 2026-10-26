@@ -26,9 +26,10 @@ import (
 //
 // Source-backed choices are suggestions only: every such parameter is
 // Free, so nabe never refuses a value outside them (and the CLI never
-// runs the source to check one). The catalog does not carry a parameter's
-// free flag, and the bin validates its own arguments anyway (mtm's
-// agent launch --model accepts a model id harness.models does not list).
+// runs the source to check one), whatever the catalog's free flag says:
+// a stale or partial source list must never refuse a value the bin would
+// accept (mtm's agent launch --model takes a model id harness.models does
+// not list), and the bin still checks a non-free parameter itself.
 // A static Enum without a source is still refused outside it.
 //
 // A source whose noun is not mounted is dropped with a notice.

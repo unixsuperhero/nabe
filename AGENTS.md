@@ -19,7 +19,7 @@ Family plans, todos and the roadmap live in `~/hub/o-plans/` (`README.md` is the
 |---|---|
 | Registry files (`DATA/catalogs/<name>.json`), `register`/`refresh`/`unregister`/`list`, `BIN catalog` exec and validation, `planOf` (which nouns mount) | `registry.go` |
 | Mounting: page per extension, proxy verbs on `<ext>-<noun>`, `rowSource` (the verb declaring `rows`, else `list`) and the noun its rows answer to, lists, verb rows, catalog bindings and collision warnings, the extension page render | `mount.go` |
-| Parameter pick-list sources: the proxy from the CLI, a cache in each parameter's `Enum` in the TUI (a source list's rows, else a quiet load with the rows); suggestions only: every source-backed parameter is `Free` | `sources.go` |
+| Parameter pick-list sources: the proxy from the CLI, a cache in each parameter's `Enum` in the TUI (a source list's rows, else a quiet load with the rows); suggestions only: every source-backed parameter is `Free`, whatever the catalog's `free` says, so a stale or partial source list never refuses a value the bin would accept (the bin still checks a non-free one) | `sources.go` |
 | CLI `--target` on mounted verbs: a stand-in row for the target (`reveal`, wired as `cli.Shell.Reveal` in `main.go`) | `target.go` |
 | `App`, `New`, the `extension` noun and the extensions page, `work` (pending or inline) | `app.go` |
 | Flags (`-data`, `--smoke`, `--page`), the lone page word (`pageWord`), the oden App (`cli.Mount`) | `main.go` |
