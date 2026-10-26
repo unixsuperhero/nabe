@@ -71,7 +71,7 @@ func TestRegisterWritesTheFileAndPrintsTheSummary(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &s); err != nil {
 		t.Fatalf("stdout %q: %v", out, err)
 	}
-	if want := "fake: 4 nouns, 8 verbs, 0 pages (framework nouns skipped: 2)"; s.Summary != want {
+	if want := "fake: 4 nouns, 8 verbs, 0 pages (framework nouns skipped: 3)"; s.Summary != want {
 		t.Fatalf("summary %q, want %q", s.Summary, want)
 	}
 	raw, err := os.ReadFile(filepath.Join(data, "catalogs", "fake.json"))
@@ -82,7 +82,7 @@ func TestRegisterWritesTheFileAndPrintsTheSummary(t *testing.T) {
 	if err := json.Unmarshal(raw, &e); err != nil {
 		t.Fatal(err)
 	}
-	if e.Bin != bin || e.RegisteredAt.IsZero() || e.Catalog.Name != "fake" || len(e.Catalog.Nouns) != 6 {
+	if e.Bin != bin || e.RegisteredAt.IsZero() || e.Catalog.Name != "fake" || len(e.Catalog.Nouns) != 7 {
 		t.Fatalf("entry = %+v", e)
 	}
 }

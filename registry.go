@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/unixsuperhero/ochazuke"
@@ -357,20 +358,22 @@ type plan struct {
 	Skipped []string
 }
 
-// planOf keeps the nouns with at least one application verb whose pin is
-// not a modal mode. The framework's own nouns (app, list, page, palette,
-// prompt, input, mode, focus, history, bindings, jobs, terminal, ...) have
-// interaction verbs only: they run inside the extension's process on its
-// own screen, so a host has nothing to mount for them. A noun pinned to a
-// mode other than normal (the catalog's pin: an insert-mode field, a
-// terminal) lives only inside a modal of the extension's screen, so it is
-// skipped too. Kind and pin decide it; no noun is named.
+// planOf keeps the nouns with at least one mountable verb (mountable)
+// whose pin is not a modal mode. The framework's own verbs run inside the
+// extension's process on its own screen, so a host has nothing to mount
+// for them: most are interaction verbs (app, list, page, palette, prompt,
+// input, mode, focus, history, bindings, jobs, terminal, ...), and the few
+// with application handlers (the tree's outline verbs) are the
+// framework's all the same (frameworkVerbs). A noun pinned to a mode other
+// than normal (the catalog's pin: an insert-mode field, a terminal) lives
+// only inside a modal of the extension's screen, so it is skipped too.
+// Kind, pin and the framework's registry decide it; no noun is named.
 func planOf(doc cli.CatalogDoc) plan {
 	var p plan
 	for _, n := range doc.Nouns {
 		var verbs []cli.CatalogVerb
 		for _, v := range n.Verbs {
-			if v.Kind == ochazuke.KindApplication {
+			if mountable(n.Name, v) {
 				verbs = append(verbs, v)
 			}
 		}
@@ -382,6 +385,27 @@ func planOf(doc cli.CatalogDoc) plan {
 	}
 	return p
 }
+
+// mountable reports a catalog verb nabe mounts: an application verb the
+// extension declared, not one the framework registers in every runtime.
+func mountable(noun string, v cli.CatalogVerb) bool {
+	return v.Kind == ochazuke.KindApplication && !frameworkVerbs()[noun+"."+v.Name]
+}
+
+// frameworkVerbs is every operation key a fresh runtime and model register
+// (ochazuke's own registry), so every ochazuke tool's catalog lists them.
+// An application cannot override one with an application handler
+// (NounBuilder.Verb panics), so an application verb under such a key is
+// the framework's, never the extension's.
+var frameworkVerbs = sync.OnceValue(func() map[string]bool {
+	r := ochazuke.NewRuntime()
+	ochazuke.NewModel(r)
+	keys := make(map[string]bool, len(r.Operations))
+	for key := range r.Operations {
+		keys[key] = true
+	}
+	return keys
+})
 
 // normalMode is the base mode: a noun pinned to it is not modal.
 const normalMode = "normal"

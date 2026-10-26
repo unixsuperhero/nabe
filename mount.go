@@ -251,13 +251,13 @@ func (a *App) historyKind(ext, noun string, v cli.CatalogVerb) string {
 	return ""
 }
 
-// applicationDoc is a catalog with only its application verbs (planOf's
+// applicationDoc is a catalog with only its mountable verbs (planOf's
 // rule), so row sources and verb rows are what nabe mounts; nouns keep
 // their columns.
 func applicationDoc(doc cli.CatalogDoc) cli.CatalogDoc {
 	nouns := make([]cli.CatalogNoun, 0, len(doc.Nouns))
 	for _, n := range doc.Nouns {
-		n.Verbs = slices.DeleteFunc(slices.Clone(n.Verbs), func(v cli.CatalogVerb) bool { return v.Kind != ochazuke.KindApplication })
+		n.Verbs = slices.DeleteFunc(slices.Clone(n.Verbs), func(v cli.CatalogVerb) bool { return !mountable(n.Name, v) })
 		nouns = append(nouns, n)
 	}
 	doc.Nouns = nouns

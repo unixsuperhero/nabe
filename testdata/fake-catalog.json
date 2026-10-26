@@ -22,6 +22,10 @@
     ]},
     {"name": "field", "pin": "insert", "verbs": [
       {"name": "submit", "description": "Submit the field", "kind": "application"}
+    ]},
+    {"name": "outline", "verbs": [
+      {"name": "expand", "description": "Expand the node", "kind": "application"},
+      {"name": "undo", "description": "Undo the last change", "kind": "application"}
     ]}
   ],
   "bindings": [
