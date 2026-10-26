@@ -4,14 +4,14 @@ go 1.26.0
 
 require (
 	charm.land/bubbletea/v2 v2.1.0
+	charm.land/lipgloss/v2 v2.0.6
 	github.com/charmbracelet/x/ansi v0.11.9
-	github.com/unixsuperhero/ochazuke v0.0.0-00010101000000-000000000000
-	github.com/unixsuperhero/oden v0.0.0-00010101000000-000000000000
+	github.com/unixsuperhero/ochazuke v0.1.0
+	github.com/unixsuperhero/oden v0.1.0
 )
 
 require (
 	charm.land/bubbles/v2 v2.2.1 // indirect
-	charm.land/lipgloss/v2 v2.0.6 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20261008173134-6b8d4baf91b4 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
@@ -27,7 +27,3 @@ require (
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 )
-
-replace github.com/unixsuperhero/ochazuke => /Users/unixsuperhero/proj/ochazuke
-
-replace github.com/unixsuperhero/oden => /Users/unixsuperhero/proj/oden

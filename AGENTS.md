@@ -61,4 +61,4 @@ nabe keeps no copy of these; use them rather than rebuilding them.
 gofmt -l . && go vet ./... && timeout 300 go test -race -count=2 ./... && timeout 60 go run . -data /tmp/nabe-smoke --smoke
 ```
 
-ochazuke and oden are local `replace` lines; drop them once both are tagged. Commit after every step; do not amend.
+oden and ochazuke are required at their tags (`v0.1.0`); an untracked `go.work` (`go work init . && go work use ../oden ../ochazuke`) builds against the sibling checkouts, and `GOWORK=off` builds from the tags as a fresh clone does. Commit after every step; do not amend.
