@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -120,5 +122,26 @@ func TestUnmountedSourceIsANotice(t *testing.T) {
 		if !slices.Contains(a.m.Notices, "fake: item touch --tag: choices source field.submit is not mounted; no pick list") {
 			t.Fatalf("sync %v: notices %q", sync, a.m.Notices)
 		}
+	}
+}
+
+// A timed refresh (PageView.Reload) fills the lists itself; the pick lists
+// a list answers follow its rows once the reload lands.
+func TestTimedReloadKeepsListChoices(t *testing.T) {
+	a, state := tui(t)
+	note := func() []string { return a.r.Operations["fake-item.touch"].Parameters["note"].Enum }
+	if !slices.Equal(note(), []string{"a1", "b2"}) {
+		t.Fatalf("note before: %q", note())
+	}
+	if err := os.WriteFile(filepath.Join(state, "items"), []byte("c3 gamma\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := a.exts[0]
+	m.every = 0
+	a.tick(m)
+	drain(a, a.r.PendingCommands())
+	frame(a)
+	if a.r.List("ext/fake/item").Len() != 1 || !slices.Equal(note(), []string{"c3"}) {
+		t.Fatalf("after the tick: %d rows, note %q", a.r.List("ext/fake/item").Len(), note())
 	}
 }

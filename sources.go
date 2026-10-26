@@ -89,9 +89,11 @@ func (a *App) mountSources(m *mounted, nouns []cli.CatalogNoun, mounted map[stri
 			}
 		}
 	}
-	for _, l := range m.lists {
-		if src := m.sources[l.noun+"."+l.source]; src != nil && l.source != "" {
-			l.choices, src.list = src, true
+	for _, l := range m.specs() {
+		if verb := m.source(l); verb != "" {
+			if src := m.sources[l.Noun+"."+verb]; src != nil {
+				src.list = true
+			}
 		}
 	}
 	for _, src := range m.sources {
@@ -111,6 +113,24 @@ func (a *App) setParam(opKey, name string, edit func(*ochazuke.Parameter)) {
 func (a *App) setChoices(src *choiceSource, ids []string) {
 	src.ids, src.loaded = ids, true
 	a.applyChoices(src)
+}
+
+// listChoices writes each source a list answers from that list's rows
+// (their extension ids).
+func (a *App) listChoices(m *mounted) {
+	for _, l := range m.specs() {
+		verb := m.source(l)
+		src := m.sources[l.Noun+"."+verb]
+		if verb == "" || src == nil || !src.list {
+			continue
+		}
+		items := m.view.List(l.ID).Items()
+		ids := make([]string, len(items))
+		for i, item := range items {
+			ids[i], _ = item.Data.(string)
+		}
+		a.setChoices(src, ids)
+	}
 }
 
 // applyChoices writes a source's cache into each parameter it feeds: the

@@ -41,7 +41,7 @@ func TestMountedListDrawsCatalogColumns(t *testing.T) {
 	if len(item.Columns()) != 3 || projects.Columns() != nil {
 		t.Fatalf("columns: item %v projects %v", item.Columns(), projects.Columns())
 	}
-	st := &stateLoad{items: map[string][]ochazuke.ListItem{}, seen: map[string]bool{}}
+	st := newStateLoad()
 	a.stateBatch(m, st, stateBatch{rows: []cli.Row{
 		{Noun: "item", ID: "a1", Label: "alpha", Cells: []string{"alpha", "idle", "~/proj/alpha"}},
 		{Noun: "item", ID: "b2", Label: "beta"},
@@ -59,13 +59,7 @@ func TestMountedListDrawsCatalogColumns(t *testing.T) {
 		}
 	}
 	// Rows from a list source bring cells too.
-	l := m.lists[0]
-	for _, ml := range m.lists {
-		if ml.noun == "item" {
-			l = ml
-		}
-	}
-	if err := a.setRows(l, []any{map[string]any{"id": "c3", "name": "gamma", "cells": []any{"gamma", "busy", nil}}}); err != nil {
+	if err := a.listRows(m, cli.CatalogList{ID: "ext/fake/item", Noun: "item"}, []byte(`[{"id": "c3", "name": "gamma", "cells": ["gamma", "busy", null]}]`)); err != nil {
 		t.Fatal(err)
 	}
 	if got := item.Items(); len(got) != 1 || strings.Join(got[0].Cells, "|") != "gamma|busy|" {
@@ -113,7 +107,7 @@ func TestEmptyTableKeepsItsHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := a.exts[0]
-	a.stateBatch(m, &stateLoad{items: map[string][]ochazuke.ListItem{}, seen: map[string]bool{}}, stateBatch{done: true})
+	a.stateBatch(m, newStateLoad(), stateBatch{done: true})
 	if err := a.r.List("ext/fake/item").Focus(); err != nil {
 		t.Fatal(err)
 	}

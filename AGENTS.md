@@ -18,7 +18,7 @@ Family plans, todos and the roadmap live in `~/hub/o-plans/` (`README.md` is the
 | Concern | File |
 |---|---|
 | Registry files (`DATA/catalogs/<name>.json`), `register`/`refresh`/`unregister`/`list`, `BIN catalog` exec and validation, `planOf` (which nouns mount) | `registry.go` |
-| Mounting: page per extension, proxy verbs on `<ext>-<noun>`, `rowSource` (the verb declaring `rows`, else `list`) and the noun its rows answer to, lists, verb rows, catalog bindings and collision warnings, the extension page render | `mount.go` |
+| Mounting: proxy verbs on `<ext>-<noun>`, which nouns get a list, the data page per extension (`cli.MountPage`, groups layout: the framework draws the groups rail, the lists, their columns and the verb rows, and decodes rows), the loads (startup, after a verb, `extension refresh`, the streamed state through `PageView.SetState`; the timer calls `PageView.Reload`), the page's status line, catalog bindings and collision warnings | `mount.go` |
 | Parameter pick-list sources: the proxy from the CLI, a cache in each parameter's `Enum` in the TUI (a source list's rows, else a quiet load with the rows); suggestions only: every source-backed parameter is `Free`, whatever the catalog's `free` says, so a stale or partial source list never refuses a value the bin would accept (the bin still checks a non-free one) | `sources.go` |
 | CLI `--target` on mounted verbs: a stand-in row for the target (`reveal`, wired as `cli.Shell.Reveal` in `main.go`) | `target.go` |
 | `App`, `New`, the `extension` noun and the extensions page, `work` (pending or inline) | `app.go` |
@@ -39,11 +39,12 @@ nabe keeps no copy of these; use them rather than rebuilding them.
 |---|---|
 | `ListItem.Data` -> `Instance.Data` | a row's extension id; a proxy reads `ctx.Instance.Data` for `--target` |
 | `List.Len()`, `List.Items()` | list counts on the pages |
+| `cli.MountPage`, `cli.PageView` (`SetRows`, `SetState`, `SetError`, `SetStatus`, `Reload`), `cli.DecodeRows`, `CatalogDoc.RowSource` | an extension's page: the groups rail, lists, columns, verb rows, row decoding, the `loading…`/`no rows` notes and the timed reload |
 | `Model.Notify`, `Model.Notices`, `notice.list`/`notice.clear` | mount warnings, a persistent footer notice |
 | `cli.Settle(r, before)` | `--smoke` and the tests settle pending work without a Bubble Tea loop |
 | `cli.Shell` positional words (`Operation.ParameterOrder`), verb prefixes; `cli.Mount` noun prefixes | `nabe ext reg BIN [NAME]` |
 | catalog `pin` on nouns, `rows` on verbs (`cli.CatalogNoun`, `cli.CatalogVerb`) | which nouns mount; which noun a list verb's rows answer to |
-| Tables (`ochazuke.Column`, `Columns(...)`, `ListItem.Cells`); catalog `columns` on nouns, `cells` on rows (`cli.CatalogNoun.Columns`, `cli.Row.Cells`) | a mounted list draws its row noun's columns (`columnsOf`); the extensions page is a table (`extensionColumns`: name, nouns, verbs, pages, refreshed, version, bin) |
+| Tables (`ochazuke.Column`, `Columns(...)`, `ListItem.Cells`); catalog `columns` on nouns, `cells` on rows (`cli.CatalogNoun.Columns`, `cli.Row.Cells`) | a mounted list draws its row noun's columns (`cli.MountPage` reads `CatalogDoc.ListColumns`); the extensions page is a table (`extensionColumns`: name, nouns, verbs, pages, refreshed, version, bin) |
 
 ## Invariants
 

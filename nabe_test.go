@@ -212,7 +212,7 @@ func TestTUIMountsThePageWithTheListRows(t *testing.T) {
 	if a.r.Focus != "ext/fake/item/a1" {
 		t.Fatalf("focus %q", a.r.Focus)
 	}
-	if rows := a.r.Instances["fake-tool/echo"].Bindings; len(rows) != 0 {
+	if rows := a.r.Instances["ext/fake/tool/echo"].Bindings; len(rows) != 0 {
 		t.Fatalf("a verb with required parameters got rows %+v", rows)
 	}
 	if a.r.Noun("fake-app") != nil {
@@ -259,7 +259,7 @@ func TestBoundKeyRunsTheVerbAsAPendingJob(t *testing.T) {
 		t.Fatalf("status missing:\n%s", view)
 	}
 	// A verb row: enter runs its own verb.
-	if err := a.r.SetFocus("fake-tool/ping"); err != nil {
+	if err := a.r.SetFocus("ext/fake/tool/ping"); err != nil {
 		t.Fatal(err)
 	}
 	drain(a, press(a, tea.KeyPressMsg{Code: tea.KeyEnter}))
@@ -415,7 +415,7 @@ func TestGroupsSelectTheRightPanelWithoutExecuting(t *testing.T) {
 	key('j')
 	key('h')
 	key('l')
-	if a.r.Focus != "fake-tool/ping" {
+	if a.r.Focus != "ext/fake/tool/ping" {
 		t.Fatalf("the content selection was lost: %s", a.r.Focus)
 	}
 	if got := execsAfter(t, state, before); len(got) != 0 {
@@ -644,7 +644,7 @@ func TestStateBatchesFillFirstThenSwapOnRefresh(t *testing.T) {
 	}
 	m := a.exts[0]
 	item, projects := a.r.List("ext/fake/item"), a.r.List("ext/fake/projects")
-	st := &stateLoad{items: map[string][]ochazuke.ListItem{}, seen: map[string]bool{}}
+	st := newStateLoad()
 	a.stateBatch(m, st, stateBatch{rows: []cli.Row{{Noun: "item", ID: "a1", Label: "alpha"}}})
 	if item.Len() != 1 || m.loaded {
 		t.Fatalf("first batch: %d rows, loaded %v", item.Len(), m.loaded)
@@ -653,7 +653,7 @@ func TestStateBatchesFillFirstThenSwapOnRefresh(t *testing.T) {
 	if item.Len() != 2 || projects.Len() != 1 || !m.loaded {
 		t.Fatalf("end: item %d projects %d loaded %v", item.Len(), projects.Len(), m.loaded)
 	}
-	st = &stateLoad{items: map[string][]ochazuke.ListItem{}, seen: map[string]bool{}}
+	st = newStateLoad()
 	a.stateBatch(m, st, stateBatch{rows: []cli.Row{{Noun: "item", ID: "c3"}}})
 	if item.Len() != 2 {
 		t.Fatalf("a refresh's partial batch replaced the rows: %d", item.Len())

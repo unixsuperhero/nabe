@@ -21,9 +21,9 @@ import (
 // line; its first word is the noun, a unique prefix allowed as oden allows.
 func (a *App) reveal(words []string, target string) error {
 	for _, m := range a.exts {
-		for _, l := range m.lists {
-			if id, ok := strings.CutPrefix(target, l.id+"/"); ok && id != "" && l.source != "" {
-				a.standIn(target, m.page, l.rowNoun, id)
+		for _, l := range m.specs() {
+			if id, ok := strings.CutPrefix(target, l.ID+"/"); ok && id != "" && m.source(l) != "" {
+				a.standIn(target, m.page, m.rowNoun(l), id)
 				return nil
 			}
 		}

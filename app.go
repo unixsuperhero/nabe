@@ -113,7 +113,7 @@ func (a *App) OpenOn(name string) error {
 // focusPage starts an extension in its group navigation list.
 func (a *App) focusPage(page string) error {
 	for _, e := range a.exts {
-		if e.page == page && len(e.lists) > 0 {
+		if e.page == page && e.groups != nil {
 			return e.groups.Focus()
 		}
 	}
