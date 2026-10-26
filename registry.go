@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -358,42 +359,85 @@ type plan struct {
 	Skipped []string
 }
 
-// planOf keeps the nouns with at least one mountable verb (mountable)
-// whose pin is not a modal mode. The framework's own verbs run inside the
-// extension's process on its own screen, so a host has nothing to mount
-// for them: most are interaction verbs (app, list, page, palette, prompt,
-// input, mode, focus, history, bindings, jobs, terminal, ...), and the few
-// with application handlers (the tree's outline verbs) are the
-// framework's all the same (frameworkVerbs). A noun pinned to a mode other
-// than normal (the catalog's pin: an insert-mode field, a terminal) lives
-// only inside a modal of the extension's screen, so it is skipped too.
-// Kind, pin and the framework's registry decide it; no noun is named.
+// planOf keeps the nouns with at least one mountable verb whose pin is
+// not a modal mode. The framework's own verbs run inside the extension's
+// process on its own screen, so a host has nothing to mount for them: the
+// catalog marks them builtin, and appNouns drops them (CatalogDoc.AppNouns;
+// an extension's own verb on a framework noun, mtm's history.capture-hook,
+// stays). Of the rest only application verbs mount. A noun pinned to a
+// mode other than normal (the catalog's pin: an insert-mode field, a
+// terminal) lives only inside a modal of the extension's screen, so it is
+// skipped too. Builtin, kind and pin decide it; no noun is named.
 func planOf(doc cli.CatalogDoc) plan {
 	var p plan
-	for _, n := range doc.Nouns {
-		var verbs []cli.CatalogVerb
-		for _, v := range n.Verbs {
-			if mountable(n.Name, v) {
-				verbs = append(verbs, v)
-			}
-		}
+	kept := map[string]bool{}
+	for _, n := range appNouns(doc) {
+		verbs := slices.DeleteFunc(n.Verbs, func(v cli.CatalogVerb) bool { return v.Kind != ochazuke.KindApplication })
 		if len(verbs) == 0 || modalPin(n.Pin) {
-			p.Skipped = append(p.Skipped, n.Name)
 			continue
 		}
+		kept[n.Name] = true
 		p.Nouns = append(p.Nouns, cli.CatalogNoun{Name: n.Name, Pin: n.Pin, Verbs: verbs})
+	}
+	for _, n := range doc.Nouns {
+		if !kept[n.Name] {
+			p.Skipped = append(p.Skipped, n.Name)
+		}
 	}
 	return p
 }
 
-// mountable reports a catalog verb nabe mounts: an application verb the
-// extension declared, not one the framework registers in every runtime.
-func mountable(noun string, v cli.CatalogVerb) bool {
-	return v.Kind == ochazuke.KindApplication && !frameworkVerbs()[noun+"."+v.Name]
+// mountableVerbs is the set of noun.verb keys planOf mounts.
+func mountableVerbs(doc cli.CatalogDoc) map[string]bool {
+	keys := map[string]bool{}
+	for _, n := range planOf(doc).Nouns {
+		for _, v := range n.Verbs {
+			keys[n.Name+"."+v.Name] = true
+		}
+	}
+	return keys
+}
+
+// appNouns are the nouns with verbs the extension defined, each holding
+// only those (copies; the catalog is not changed): CatalogDoc.AppNouns for
+// a catalog that marks the framework's verbs builtin. A catalog from a
+// tool built before ochazuke v0.8.0 has no builtin, so every verb would
+// read as the tool's; for it the framework's verbs are the operation keys
+// a fresh runtime and model register (frameworkVerbs).
+func appNouns(doc cli.CatalogDoc) []cli.CatalogNoun {
+	var out []cli.CatalogNoun
+	if marksBuiltin(doc) {
+		for _, n := range doc.AppNouns() {
+			n.Verbs = slices.Clone(n.Verbs)
+			out = append(out, n)
+		}
+		return out
+	}
+	for _, n := range doc.Nouns {
+		n.Verbs = slices.DeleteFunc(slices.Clone(n.Verbs), func(v cli.CatalogVerb) bool { return frameworkVerbs()[n.Name+"."+v.Name] })
+		if len(n.Verbs) > 0 {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// marksBuiltin reports a catalog that carries builtin (ochazuke v0.8.0 and
+// later): every ochazuke tool's catalog lists the framework's verbs, so a
+// catalog that marks none is one written before the field existed.
+func marksBuiltin(doc cli.CatalogDoc) bool {
+	for _, n := range doc.Nouns {
+		for _, v := range n.Verbs {
+			if v.Builtin {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // frameworkVerbs is every operation key a fresh runtime and model register
-// (ochazuke's own registry), so every ochazuke tool's catalog lists them.
+// (ochazuke's own registry): the fallback for a catalog without builtin.
 // An application cannot override one with an application handler
 // (NounBuilder.Verb panics), so an application verb under such a key is
 // the framework's, never the extension's.

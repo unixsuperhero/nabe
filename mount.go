@@ -255,9 +255,10 @@ func (a *App) historyKind(ext, noun string, v cli.CatalogVerb) string {
 // rule), so row sources and verb rows are what nabe mounts; nouns keep
 // their columns.
 func applicationDoc(doc cli.CatalogDoc) cli.CatalogDoc {
+	keep := mountableVerbs(doc)
 	nouns := make([]cli.CatalogNoun, 0, len(doc.Nouns))
 	for _, n := range doc.Nouns {
-		n.Verbs = slices.DeleteFunc(slices.Clone(n.Verbs), func(v cli.CatalogVerb) bool { return !mountable(n.Name, v) })
+		n.Verbs = slices.DeleteFunc(slices.Clone(n.Verbs), func(v cli.CatalogVerb) bool { return !keep[n.Name+"."+v.Name] })
 		nouns = append(nouns, n)
 	}
 	doc.Nouns = nouns
