@@ -1,0 +1,1004 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Animation</title>
+<style>
+:root{
+  --backdrop:#050607;
+  --bg:#0e1013;
+  --panel:#14171c;
+  --panel-bar:#1a1e24;
+  --rule:#2a3038;
+  --paper:#ece6da;
+  --soft:#a9a49a;
+  --faint:#6d6a64;
+  --you:#f2a07b;
+  --model:#9fe0b4;
+  --gold:#f0c674;
+  --c-com:#6f7a72;
+  --c-str:#e6c07b;
+  --c-kw:#d79ccf;
+  --c-fn:#8cc8f0;
+  --c-key:#9fe0b4;
+  --c-op:#f2a07b;
+  --c-num:#f0c674;
+  --mono:"SF Mono","SFMono-Regular",Menlo,Consolas,monospace;
+  --serif:"New York","Iowan Old Style",Georgia,"Times New Roman",serif;
+  --sans:-apple-system,BlinkMacSystemFont,"Avenir Next","Segoe UI",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--backdrop);overflow:hidden}
+body{display:grid;place-items:center}
+.stage{width:1920px;height:1080px;position:relative;overflow:hidden;flex-shrink:0;background:var(--bg);color:var(--paper);font-family:var(--sans);transform-origin:center}
+.stage::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse 70% 60% at 100% 0%,#1d2a2333,transparent 70%),radial-gradient(ellipse 60% 50% at 0% 100%,#2a1f1a33,transparent 70%)}
+
+/* chrome */
+.top{position:absolute;left:96px;right:96px;top:64px;height:64px;display:flex;align-items:flex-end;justify-content:space-between;gap:40px}
+.top .ch{display:flex;align-items:baseline;gap:22px;min-width:0}
+.top .num{font:500 20px var(--mono);color:var(--model);letter-spacing:2px}
+.top .title{font:400 40px/1.1 var(--serif);letter-spacing:-.5px;white-space:nowrap}
+.top .src{font:15px var(--mono);color:var(--faint);white-space:nowrap}
+.rule{position:absolute;left:96px;right:96px;top:150px;height:1px;background:var(--rule)}
+.progress{position:absolute;left:96px;right:96px;bottom:56px;display:flex;gap:8px}
+.progress i{flex:1;height:3px;background:var(--rule);border-radius:2px;overflow:hidden;position:relative}
+.progress i b{position:absolute;inset:0;background:var(--model);transform-origin:left;transform:scaleX(0)}
+.progress i.done b{transform:scaleX(1)}
+.brand{position:absolute;right:96px;bottom:22px;font:13px var(--mono);color:var(--faint);letter-spacing:3px;text-transform:uppercase}
+
+/* beats: each one is a layer filling the content area */
+.content{position:absolute;left:96px;right:96px;top:166px;bottom:96px}
+.layer{position:absolute;inset:0;opacity:0}
+
+/* thread */
+.thread-layer{display:grid;grid-template-columns:860px minmax(0,1fr);gap:72px}
+.viewport{position:relative;overflow:hidden;min-height:0;
+  -webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 34px);mask-image:linear-gradient(to bottom,transparent 0,#000 34px)}
+.thread{position:absolute;left:0;right:0;top:0;padding-top:24px}
+.msg{margin-bottom:34px;opacity:0}
+.who{font:600 15px var(--mono);letter-spacing:3px;text-transform:uppercase;margin-bottom:12px}
+.msg.you .who{color:var(--you)}
+.msg.model .who{color:var(--model)}
+.msg.you .text{font-size:27px;line-height:1.45;color:#d6d0c4;border-left:3px solid #f2a07b55;padding-left:22px}
+.msg.you .c{opacity:0}
+.msg.model .text{font-family:var(--serif);font-size:32px;line-height:1.36;letter-spacing:-.3px;color:#bdb7ab}
+.text p{margin:0 0 .55em}
+.text p:last-child{margin-bottom:0}
+.code-inline{font-family:var(--mono);font-size:.78em;color:var(--soft);display:inline-block;margin-top:.4em}
+.w{opacity:0;display:inline-block;white-space:pre}
+.m{background-image:linear-gradient(var(--model),var(--model));background-repeat:no-repeat;background-position:0 92%;background-size:0% 3px;padding-bottom:2px}
+.msg.you .m{background-image:linear-gradient(var(--you),var(--you))}
+.m .w{display:inline}
+
+.right{min-height:0;min-width:0;display:flex;flex-direction:column;gap:22px}
+.slot{display:grid;min-height:0;flex:0 1 auto;max-height:100%}
+.right.two .slot{flex:1 1 0}
+.slot>*{grid-area:1/1;align-self:start;max-height:100%;min-height:0}
+
+/* code panel */
+.panel{background:var(--panel);border:1px solid var(--rule);border-radius:14px;overflow:hidden;box-shadow:0 30px 80px #0006;opacity:0;display:flex;flex-direction:column}
+.bar{height:46px;flex-shrink:0;display:flex;align-items:center;gap:16px;padding:0 20px;background:var(--panel-bar);border-bottom:1px solid var(--rule);font:15px var(--mono);color:var(--soft)}
+.dots{display:flex;gap:8px}.dots i{width:11px;height:11px;border-radius:50%;background:#3a4048}
+.dots i:nth-child(1){background:#e0795f}.dots i:nth-child(2){background:#d8b45a}.dots i:nth-child(3){background:#6fbf84}
+.bar .label{position:relative;flex:1;height:20px}
+.bar .label span{position:absolute;left:0;top:0;white-space:nowrap}
+.body{position:relative;padding:20px 0 24px;overflow:hidden;flex:1;min-height:0}
+.stack{display:grid}
+.stack>.block{grid-area:1/1}
+.block{font-family:var(--mono);line-height:1.6;white-space:pre}
+.ln{display:block;position:relative;padding:0 26px 0 60px;opacity:0;border-radius:3px}
+.ln::before{content:attr(data-n);position:absolute;left:0;width:42px;text-align:right;color:#454b54;font-size:.8em;top:.12em}
+.ln .strike{position:absolute;left:54px;right:20px;top:52%;height:2px;background:var(--you);transform:scaleX(0);transform-origin:left}
+.com{color:var(--c-com);font-style:italic}.str{color:var(--c-str)}.kw{color:var(--c-kw)}.fn{color:var(--c-fn)}.key{color:var(--c-key)}.op{color:var(--c-op)}.num{color:var(--c-num)}
+.glow{border-radius:4px}
+
+/* split */
+.split-layer{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:start;align-content:center;padding-bottom:40px}
+.split-layer .panel{max-height:798px}
+
+/* cards */
+.cards{display:flex;flex-direction:column;gap:30px}
+.card h4{margin:0 0 14px;font:600 15px var(--mono);letter-spacing:3px;text-transform:uppercase;opacity:0}
+.card.good h4{color:var(--model)}.card.risk h4{color:var(--you)}
+.card .item{font-size:26px;line-height:1.3;padding:13px 20px;margin-bottom:10px;background:var(--panel);border:1px solid var(--rule);border-left:4px solid var(--model);border-radius:8px;opacity:0}
+.card.risk .item{border-left-color:var(--you)}
+.card .item.hot{border-color:#9fe0b466;border-left-color:var(--model);background:#16201b}
+
+/* quote */
+.quote-layer{display:flex;flex-direction:column;justify-content:center;padding:0 64px 40px}
+.quote-layer .who{color:var(--model);margin-bottom:34px}
+.quote-layer .big{font:400 96px/1.12 var(--serif);letter-spacing:-2.5px;color:var(--paper);max-width:1560px}
+.quote-layer .big .m{background-size:0% 6px;background-position:0 94%}
+.quote-layer .lead{color:#bdb7ab}
+
+/* readers */
+.readers{position:absolute;left:0;right:0;top:0;height:610px}
+.readers svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.readers path{fill:none;stroke:#9fe0b4;stroke-width:2;stroke-dasharray:1;stroke-dashoffset:1;opacity:.6}
+.dot{position:absolute;left:0;top:0;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:var(--model);box-shadow:0 0 14px var(--model);opacity:0;offset-rotate:0deg}
+.src-card{position:absolute;left:0;width:540px;background:var(--panel);border:1px solid var(--model);border-radius:14px;box-shadow:0 0 60px #9fe0b41a;opacity:0;overflow:hidden}
+.src-card .bar{color:var(--model)}
+.src-card .code{padding:18px 22px;font:19px/1.6 var(--mono);white-space:pre}
+.reader{position:absolute;left:780px;right:0;height:104px;background:var(--panel);border:1px solid var(--rule);border-radius:10px;opacity:0;overflow:hidden}
+.reader .rbar{height:32px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;background:var(--panel-bar);border-bottom:1px solid var(--rule);font:13px var(--mono);color:var(--soft)}
+.reader .rbar b{font-weight:500;color:var(--paper)}
+.reader .rbar span{color:var(--model);letter-spacing:2px;text-transform:uppercase}
+.reader .rbody{padding:9px 16px;font:18px/1.6 var(--mono);white-space:pre}
+.faint{color:var(--faint)}
+.chip{padding:1px 8px;border-radius:4px;background:#2a3038}
+.caption{position:absolute;left:0;right:0;top:640px;font-family:var(--serif);font-size:34px;line-height:1.38;color:#bdb7ab;letter-spacing:-.3px}
+
+/* overlays */
+.overlay{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;padding:0 160px;background:var(--bg);opacity:0;pointer-events:none}
+.overlay .big{font:400 180px/1 var(--serif);color:var(--model);letter-spacing:-6px;margin-bottom:10px}
+.overlay .head{font:400 88px/1.08 var(--serif);letter-spacing:-2px;max-width:1500px}
+.overlay .sub{font:20px var(--mono);color:var(--faint);margin-top:34px;letter-spacing:1px}
+.overlay .kicker{font:600 18px var(--mono);color:var(--model);letter-spacing:5px;text-transform:uppercase;margin-bottom:28px}
+.overlay .line{height:2px;width:0;background:var(--model);margin:40px 0 0}
+.overlay .head .m{background-size:0% 5px;background-position:0 94%}
+.overlay .opener{font:400 66px/1.3 var(--sans);color:#e8e1d4;max-width:1500px;letter-spacing:-.5px}
+.overlay .opener .c{opacity:0}
+.overlay .opener-who{font:600 20px var(--mono);color:var(--you);letter-spacing:4px;text-transform:uppercase;margin-bottom:30px}
+.caret{display:inline-block;width:.5em;height:1em;background:var(--you);vertical-align:-.12em;margin-left:4px}
+
+.hud{position:absolute;right:20px;top:16px;font:13px var(--mono);color:var(--faint);background:#000a;padding:8px 12px;border-radius:6px;transition:opacity .4s;z-index:10}
+.hud.off{opacity:0}
+.tc{position:absolute;left:20px;top:16px;font:13px var(--mono);color:var(--gold);background:#000a;padding:8px 12px;border-radius:6px;z-index:10;opacity:0;transition:opacity .3s}
+.tc.on,.paused .tc{opacity:1}
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+  <div class="top" id="top"><div class="ch"><span class="num" id="tnum"></span><span class="title" id="ttitle"></span></div><span class="src" id="tsrc"></span></div>
+  <div class="rule" id="trule"></div>
+  <div class="content" id="content"></div>
+  <div class="progress" id="progress"></div>
+  <div class="brand" id="brand"></div>
+  <div class="overlay" id="overlay"></div>
+  <div class="hud" id="hud">space pause · ← → step · shift ← → chapter · , . 1s · &lt; &gt; 5s · home chapter start · r restart · h hide</div>
+  <div class="tc" id="tc"></div>
+</div>
+<script>
+// ── config ────────────────────────────────────────────────────────────────
+// Everything the viewer reads lives in SHOW_CONFIG and CHAPTERS. The engine
+// below never names content. Text: [[…]] draws an underline, `…` is inline
+// code, "…" marks a cut in a quote. Code lines: a leading "~" is struck out
+// before the next block replaces it; "@N|" puts the line in glow group N
+// (lines of one group light up together, across panels).
+const SHOW_CONFIG = {
+  modelLabel: "nabe",
+  youLabel: "you",
+  brand: "o family · nabe",
+  intro: {
+    kicker: "o family · nabe · o-nabe · o-tui",
+    head: "One host, and [[every tool is a page]]",
+    sub: "an ochazuke app that mounts extension catalogs · Go · Bubble Tea v2",
+  },
+  opener: "every o tool already has a CLI.\nI want one TUI for all of them, without writing a UI per tool.",
+  outro: {
+    kicker: "nabe · hot pot",
+    head: "Answer one catalog call, [[get a page.]] [[nabe hosts the rest.]]",
+    sub: "go build -o ~/bin/o-nabe . && ln -sf ~/bin/o-nabe ~/bin/o-tui",
+  },
+};
+const params = new URLSearchParams(location.search);
+const SPEED = parseFloat(params.get("speed") || "1");
+
+// ── script ────────────────────────────────────────────────────────────────
+// A chapter is a title, a source line and beats. Beat types:
+//   thread  chat messages {who: "you"|"model", text, code?, cards?, links?}
+//   split   two code panels side by side; glow group 1 lights on each
+//   quote   one full-screen line, [[…]] underlined thick
+//   fan     a source card wired to reader panels, with a caption
+const CATALOG = [
+  "{",
+  "  \"schema\": 1,",
+  "  \"name\": \"fake\",",
+  "  \"nouns\": [",
+  "@1|    {\"name\": \"item\", \"verbs\": [",
+  "      {\"name\": \"list\", \"kind\": \"application\"},",
+  "      {\"name\": \"remove\", \"kind\": \"application\",",
+  "       \"confirm\": \"Remove {{label}}?\"}",
+  "    ]},",
+  "    {\"name\": \"field\", \"pin\": \"insert\", …}",
+  "  ],",
+  "@2|  \"bindings\": [{\"noun\": \"item\", \"mode\": \"normal\",",
+  "@2|    \"keys\": \"x\", \"request\": {\"verb\": \"remove\", …}}]",
+  "}",
+];
+const REGISTER = [
+  "$ nabe extension register testdata/fake-ext",
+  "{",
+  "  \"name\": \"fake\",",
+  "  \"nouns\": 4,",
+  "  \"skipped\": 2,",
+  "@1|  \"summary\": \"fake: 4 nouns, 7 verbs, 0 pages (framework nouns skipped: 2)\",",
+  "  \"verbs\": 7,",
+  "  \"version\": \"0.1.0\"",
+  "}",
+];
+const SMOKE = [
+  "◆ nabe                           NORMAL",
+  " › fake  Extensions",
+  "────────────────────────────────────────",
+  "╭─ Groups ───────╮ ╭─ item (3) ────────╮",
+  "│ item           │ │ alpha             │",
+  "│ tool           │ │ beta              │",
+  "│ projects       │ │ gamma             │",
+  "│                │ │                   │",
+  "│                │ │                   │",
+  "╰────────────────╯ ╰───────────────────╯",
+];
+const PLANOF = [
+  "func planOf(doc cli.CatalogDoc) plan {",
+  "  var p plan",
+  "  for _, n := range doc.Nouns {",
+  "    var verbs []cli.CatalogVerb",
+  "    for _, v := range n.Verbs {",
+  "@1|      if v.Kind == ochazuke.KindApplication {",
+  "        verbs = append(verbs, v)",
+  "      }",
+  "    }",
+  "@2|    if len(verbs) == 0 || modalPin(n.Pin) {",
+  "@2|      p.Skipped = append(p.Skipped, n.Name)",
+  "      continue",
+  "    }",
+  "    p.Nouns = append(p.Nouns, cli.CatalogNoun{…})",
+  "  }",
+  "  return p",
+  "}",
+];
+const TENANTS = [
+  "$ nabe extension list",
+  "// five tenants today (fields trimmed)",
+  "{\"name\":\"ai\",        \"nouns\":9,  \"verbs\":20}",
+  "{\"name\":\"inventory\", \"nouns\":12, \"verbs\":27}",
+  "{\"name\":\"mtm\",       \"nouns\":19, \"verbs\":63, \"pages\":5}",
+  "{\"name\":\"proj\",      \"nouns\":1,  \"verbs\":10}",
+  "{\"name\":\"qbt\",       \"nouns\":7,  \"verbs\":35}",
+];
+const EXECS = [
+  "execs = {",
+  "  startup:          \"every extension at once, in the background\",",
+  "  everyInterval:    \"the same load, on a quiet timer (default 60s)\",",
+  "  afterVerb:        \"the verb itself, then the state\",",
+  "  extensionRefresh: \"catalog, then the state\",",
+  "@1|  keysFocusPages:   \"never: j/k, }, ctrl+j and page switches",
+  "@1|                     draw the cached rows\",",
+  "}",
+];
+const STATE_LINES = [
+  "// o-ai status state",
+  "{\"noun\":\"agent\",\"id\":\"agent/agent:claude:…/ada.md\",",
+  " \"label\":\"ada [claude]\"}",
+  "{\"noun\":\"skill\",\"id\":\"skill/skill:claude:…/SKILL.md\",",
+  " \"label\":\"review [claude]\"}",
+];
+
+const CHAPTERS = [
+{
+  title: "A pot everyone adds to",
+  src: "README.md · AGENTS.md · testdata/",
+  beats: [
+    { type: "thread", messages: [
+      { who: "you", text: "so what is nabe, exactly?" },
+      { who: "model", text: [
+        "A host for ochazuke extensions. I know one noun, `extension`; [[everything else on my screen comes from extension catalogs.]]",
+        "Any executable that answers `BIN catalog` with this JSON becomes a page.",
+      ], code: { blocks: [{ label: "testdata/fake-catalog.json · excerpt", lines: CATALOG }] }, links: true },
+      { who: "you", text: "how does a tool get in?" },
+      { who: "model", text: [
+        "You register it. I run its `catalog` once, write one registry file, and [[tell you what I mounted and what I skipped.]]",
+      ], code: { blocks: [{ label: "captured · register into a scratch -data dir", lines: REGISTER }] }, links: true },
+      { who: "you", text: "and the screen?" },
+      { who: "model", text: [
+        "Run me with no words. Each extension is a page: a Groups list on the left, [[the selected group's rows on the right.]] `j`/`k` picks a group without running the tool.",
+      ], code: { big: true, blocks: [{ label: "nabe --smoke · frame narrowed to fit", lines: SMOKE }] } },
+    ]},
+    { type: "quote", text: "ochazuke stays a framework (no noun names), mtm stays thin (the slice), nabe hosts. [[Hot pot: everyone adds to one pot.]]", small: true },
+  ],
+},
+{
+  title: "Data decides what mounts",
+  src: "registry.go · mount.go",
+  beats: [
+    { type: "fan",
+      source: { label: "catalog · written by the extension", lines: [
+        "{\"name\": \"item\", \"verbs\": [",
+        "  {\"name\": \"list\", \"kind\": \"application\"},",
+        "  {\"name\": \"touch\", \"kind\": \"application\"}",
+        "]}",
+        "{\"noun\": \"item\", \"keys\": \"t\",",
+        " \"request\": {\"verb\": \"touch\", …}}",
+      ] },
+      targets: [
+        { name: "nabe --smoke", verb: "a page lists it", lines: ["<faint>Groups  </faint> item · tool · projects", "<faint>item (3)</faint> alpha · beta · gamma"] },
+        { name: "nabe help", verb: "the CLI mounts it", lines: ["fake-item   (inline)   list remove touch", "<faint>$</faint> nabe fake-item touch"] },
+        { name: "proxy exec", verb: "a key runs it", lines: ["<faint>t on the row a1 →</faint>", "item touch --target a1 --json {} --yes"] },
+      ],
+      glow: ["\\bitem\\b", "\\btouch\\b"],
+      caption: "One catalog, and nabe builds [[the page, the keys and the CLI]] from it. Exec is the only transport." },
+    { type: "thread", messages: [
+      { who: "you", text: "so you hard-code mtm's nouns somewhere?" },
+      { who: "model", text: [
+        "No noun names in my own code except `extension`. [[Which nouns mount is decided by data]]: a noun needs an application verb, and no pin to a modal mode.",
+      ], code: { blocks: [{ label: "registry.go · planOf", lines: PLANOF }] }, links: true },
+      { who: "you", text: "what's actually mounted right now?" },
+      { who: "model", text: [
+        "Five family tools, each registered with one command. mtm alone brings 63 verbs, and [[none of them needed a line of nabe code.]]",
+      ], code: { blocks: [{ label: "captured · nabe extension list", lines: TENANTS }] } },
+    ]},
+  ],
+},
+{
+  title: "The rows are a cache",
+  src: "README.md · nabe_test.go",
+  beats: [
+    { type: "split", panels: [
+      { label: "calls log · per-list loads", lines: [
+        "// FAKE_MODE unset: one exec per list",
+        "catalog",
+        "@1|item list --json {}",
+        "@1|projects list --json {}",
+      ] },
+      { label: "calls log · catalog declares a state source", lines: [
+        "// FAKE_MODE=state: \"state\": \"item.state\"",
+        "catalog",
+        "@1|item state --json {}",
+      ] },
+    ]},
+    { type: "thread", messages: [
+      { who: "you", text: "does pressing `j` run the tool every time?" },
+      { who: "model", text: [
+        "Never. I exec at startup, on a quiet timer, after a verb and on refresh. [[A key, a focus move or a page switch never execs]], and `TestExecBudget` counts it.",
+      ], code: { blocks: [{ label: "README.md · when nabe execs", lines: EXECS }] }, links: true },
+      { who: "you", text: "and when a tool is slow?" },
+      { who: "model", text: [
+        "The TUI never blocks. A state source streams JSON Lines; [[the first load fills each list batch by batch]], and a refresh keeps the old rows until the new ones are complete.",
+      ], code: { blocks: [{ label: "README.md · a state stream", lines: STATE_LINES }] } },
+      { who: "you", text: "so what does a tool get for free?" },
+      { who: "model", text: ["Everything a page needs, from one `catalog` call."], cards: [
+        { cls: "good", title: "From the catalog", items: [
+          "!A page per extension: groups, lists, tables",
+          "Keys from its binding rows, palette commands, confirm prompts",
+          "A CLI through oden: nabe ext reg mtm",
+        ] },
+        { cls: "risk", title: "Never silently", items: [
+          "A colliding key is dropped with a footer notice",
+        ] },
+      ] },
+    ]},
+  ],
+},
+];
+
+// ── helpers ───────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const EASE = "cubic-bezier(.2,.7,.2,1)";
+const anims = [];
+let marks = [];   // seek points in the current segment (ms)
+const mark = t => marks.push(t);
+let seen = new WeakSet();
+// Every animation is created up front with a delay and held paused; the
+// player sets their time from its own clock, so seeking is exact. Only the
+// first one on a node fills backwards; later ones fill forwards, so they
+// cannot override the earlier ones before they start.
+function A(node, frames, delay, duration, easing = EASE) {
+  const fill = seen.has(node) ? "forwards" : "both";
+  seen.add(node);
+  const a = node.animate(frames, { delay, duration, easing, fill });
+  a.pause();
+  a.currentTime = 0;
+  anims.push(a);
+  return a;
+}
+const fadeIn = (n, t, d = 500) => A(n, [{ opacity: 0 }, { opacity: 1 }], t, d, "ease-out");
+const fadeUp = (n, t, d = 600, dy = 18) => A(n, [{ opacity: 0, transform: `translateY(${dy}px)` }, { opacity: 1, transform: "none" }], t, d);
+const fadeOut = (n, t, d = 500) => A(n, [{ opacity: 1 }, { opacity: 0 }], t, d, "ease-in");
+const underline = (m, t, d, px = 3, from = null, to = null) => {
+  const f0 = { backgroundSize: `0% ${px}px` }, f1 = { backgroundSize: `100% ${px}px` };
+  if (from) { f0.color = from; f1.color = to; }
+  return A(m, [f0, f1], t, d, "ease-in-out");
+};
+
+function segments(text) {
+  const out = []; const re = /\[\[([\s\S]*?)\]\]/g; let i = 0, m;
+  while ((m = re.exec(text))) { if (m.index > i) out.push([text.slice(i, m.index), false]); out.push([m[1], true]); i = re.lastIndex; }
+  if (i < text.length) out.push([text.slice(i), false]);
+  return out;
+}
+
+const TOK = /(\/\/.*$)|("(?:[^"\\]|\\.)*"|`[^`]*`)|(\b(?:return|if|else|for|of|const|let|func)\b)|([A-Za-z_][\w.]*(?=\())|([A-Za-z_]\w*(?=\s*:(?![:=])))|(→|=>|\?\?|===|==|:=|\.\.\.)|(\b\d+\b)/g;
+const CLS = [null, "com", "str", "kw", "fn", "key", "op", "num"];
+function highlight(line, lang) {
+  if (lang === "md") return esc(line).replace(/^(\s*)(- \[ \]|-)/, '$1<span class="op">$2</span>');
+  let out = "", i = 0, m;
+  TOK.lastIndex = 0;
+  while ((m = TOK.exec(line))) {
+    out += esc(line.slice(i, m.index));
+    const g = m.slice(1).findIndex(x => x !== undefined) + 1;
+    out += `<span class="${CLS[g]}">${esc(m[0])}</span>`;
+    i = TOK.lastIndex;
+    if (m[0].length === 0) TOK.lastIndex++;
+  }
+  return out + esc(line.slice(i));
+}
+// wraps regex matches in text nodes with span.glow
+function wrapGlow(root, sources) {
+  if (!sources || !sources.length) return [];
+  const found = [];
+  const walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = []; while (walk.nextNode()) nodes.push(walk.currentNode);
+  const re = new RegExp(sources.join("|"), "g");
+  for (const n of nodes) {
+    const t = n.nodeValue; re.lastIndex = 0; if (!re.test(t)) continue; re.lastIndex = 0;
+    const frag = document.createDocumentFragment(); let i = 0, m;
+    while ((m = re.exec(t))) {
+      frag.append(t.slice(i, m.index));
+      const s = el("span", "glow"); s.textContent = m[0]; frag.append(s); found.push(s);
+      i = re.lastIndex;
+    }
+    frag.append(t.slice(i)); n.replaceWith(frag);
+  }
+  return found;
+}
+const pulse = (g, t) => A(g, [
+  { background: "#f0c67400", boxShadow: "0 0 0 0 #f0c67400" },
+  { background: "#f0c67455", boxShadow: "0 0 0 4px #f0c67455", offset: .4 },
+  { background: "#f0c67426", boxShadow: "0 0 0 2px #f0c67426" },
+], t, 900);
+// largest font size in [min,max] at which node fits inside box
+function fit(node, box, min, max) {
+  let lo = min, hi = max;
+  while (hi - lo > 0.5) {
+    const mid = (lo + hi) / 2; node.style.fontSize = mid + "px";
+    (box.scrollHeight <= box.clientHeight + 1 && box.scrollWidth <= box.clientWidth + 1) ? lo = mid : hi = mid;
+  }
+  node.style.fontSize = lo + "px";
+  return lo;
+}
+// shrink node's font until node is at most maxH tall
+function fitHeight(node, maxH, start, min) {
+  let s = start; node.style.fontSize = s + "px";
+  while (node.offsetHeight > maxH && s > min) { s -= 1; node.style.fontSize = s + "px"; }
+}
+
+// text with marks: words become spans (you: characters), marks become .m
+function renderText(host, text, perChar) {
+  const units = [], marks = [];
+  const paras = Array.isArray(text) ? text : [text];
+  for (const para of paras) {
+    const p = el("p");
+    for (const [chunk, marked] of segments(para)) {
+      const holder = marked ? el("span", "m") : p;
+      if (marked) { marks.push(holder); p.append(holder); }
+      chunk.split(/(`[^`]*`)/).forEach(part => {
+        if (!part) return;
+        let target = holder;
+        if (part.startsWith("`")) { target = el("span", "code-inline"); holder.append(target); part = part.slice(1, -1); }
+        if (perChar) {
+          for (const c of part) {
+            if (c === "\n") { target.append(el("br")); continue; }
+            const s = el("span", "c"); s.textContent = c; target.append(s); units.push(s);
+          }
+        } else {
+          for (const tok of part.split(/(\s+)/)) {
+            if (!tok) continue;
+            if (/^\s+$/.test(tok)) { target.append(" "); continue; }
+            const w = el("span", "w"); w.textContent = tok; target.append(w); units.push(w);
+          }
+        }
+      });
+    }
+    host.append(p);
+  }
+  return { units, marks };
+}
+
+// ── code panel ────────────────────────────────────────────────────────────
+function buildCode(host, spec) {
+  const panel = el("div", "panel");
+  panel.innerHTML = `<div class="bar"><div class="dots"><i></i><i></i><i></i></div><div class="label"></div></div>`;
+  const label = panel.querySelector(".label");
+  const body = el("div", "body");
+  const stack = el("div", "stack");
+  body.append(stack); panel.append(body); host.append(panel);
+
+  const groups = {};
+  const blocks = spec.blocks.map(b => {
+    const block = el("div", "block");
+    const lines = b.lines.map((raw, i) => {
+      const [, strike, group, text] = raw.match(/^(~)?(?:@(\d)\|)?([\s\S]*)$/);
+      const ln = el("span", "ln", highlight(text, spec.lang) || " ");
+      ln.dataset.n = i + 1;
+      if (strike) ln.append(el("span", "strike"));
+      if (group) (groups[group] ||= []).push(ln);
+      block.append(ln);
+      return { ln, struck: !!strike };
+    });
+    const glows = wrapGlow(block, spec.glow);
+    stack.append(block);
+    const lab = el("span", null, esc(b.label)); label.append(lab);
+    return { block, lines, glows, lab };
+  });
+  const multi = blocks.length > 1;
+
+  return {
+    root: panel, groups, lineCount: blocks.reduce((n, b) => n + b.lines.length, 0),
+    fit() { fit(stack, body, 11, spec.big ? 30 : 22); },
+    play(t) {
+      A(panel, [{ opacity: 0, transform: "translateX(40px)" }, { opacity: 1, transform: "none" }], t, 700);
+      t += 300;
+      blocks.forEach((b, bi) => {
+        const last = bi === blocks.length - 1;
+        fadeIn(b.lab, t, 400);
+        if (multi) A(b.block, [{ opacity: 1 }, { opacity: 1 }], t, 1);
+        const step = Math.min(110, 1600 / b.lines.length);
+        b.lines.forEach(({ ln }, i) => A(ln, [{ opacity: 0, transform: "translateX(-10px)" }, { opacity: 1, transform: "none" }], t + i * step, 420));
+        t += b.lines.length * step + 500;
+        b.glows.forEach((g, i) => pulse(g, t + i * 380));
+        if (b.glows.length) t += b.glows.length * 380 + 700;
+        if (!last) {
+          t += 1400;
+          const struck = b.lines.filter(l => l.struck);
+          struck.forEach((l, i) => {
+            A(l.ln.querySelector(".strike"), [{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }], t + i * 160, 450);
+            A(l.ln, [{ opacity: 1 }, { opacity: .35 }], t + i * 160 + 250, 400);
+          });
+          t += struck.length * 160 + 1300;
+          fadeOut(b.block, t, 500);
+          fadeOut(b.lab, t, 400);
+          t += 550;
+        }
+      });
+      return t;
+    },
+  };
+}
+
+function buildCards(host, groupsSpec) {
+  const wrap = el("div", "cards");
+  wrap.style.opacity = 0;
+  const parts = groupsSpec.map(g => {
+    const card = el("div", `card ${g.cls}`);
+    const h = el("h4", null, esc(g.title)); card.append(h);
+    const items = g.items.map(txt => {
+      const hot = txt.startsWith("!");
+      const it = el("div", "item" + (hot ? " hot" : ""), esc(hot ? txt.slice(1) : txt));
+      card.append(it); return it;
+    });
+    wrap.append(card);
+    return { h, items };
+  });
+  host.append(wrap);
+  return {
+    root: wrap, groups: {}, lineCount: 7,
+    fit() {},
+    play(t) {
+      fadeIn(wrap, t, 300);
+      for (const p of parts) {
+        fadeUp(p.h, t, 500, 8); t += 300;
+        p.items.forEach(it => { A(it, [{ opacity: 0, transform: "translateX(30px)" }, { opacity: 1, transform: "none" }], t, 550); t += 420; });
+        t += 500;
+      }
+      return t + 600;
+    },
+  };
+}
+
+// lights up glow group k across panels: each line warms, then settles
+function glowGroup(lines, t) {
+  lines.forEach(ln => A(ln, [
+    { backgroundColor: "#f0c67400" },
+    { backgroundColor: "#f0c67440", offset: .3 },
+    { backgroundColor: "#f0c6741c" },
+  ], t, 1400, "ease-out"));
+}
+
+// ── beats: each takes (layer host, t) and returns the end time ───────────
+function beatThread(host, beat, t0) {
+  const layer = el("div", "layer thread-layer");
+  host.append(layer);
+  const viewport = el("div", "viewport");
+  const thread = el("div", "thread");
+  viewport.append(thread);
+  const right = el("div", "right");
+  layer.append(viewport, right);
+  const slots = [];
+  const slotOf = i => { while (slots.length <= i) { const s = el("div", "slot"); right.append(s); slots.push(s); } return slots[i]; };
+  if (beat.messages.some(m => m.code?.slot === 1)) { slotOf(1); right.classList.add("two"); }
+
+  // build everything hidden, then measure
+  const items = beat.messages.map(msg => {
+    const node = el("div", `msg ${msg.who}`);
+    node.append(el("div", "who", msg.who === "you" ? `❯ ${esc(SHOW_CONFIG.youLabel)}` : `⏺ ${esc(SHOW_CONFIG.modelLabel)}`));
+    const text = el("div", "text");
+    node.append(text);
+    thread.append(node);
+    const { units, marks } = renderText(text, msg.text, msg.who === "you");
+    let panel = null, slot = 0;
+    if (msg.code) { slot = msg.code.slot || 0; panel = buildCode(slotOf(slot), msg.code); }
+    else if (msg.cards) { panel = buildCards(slotOf(0), msg.cards); }
+    return { msg, node, text, units, marks, panel, slot };
+  });
+  const vh = viewport.clientHeight;
+  items.forEach(it => fitHeight(it.text, vh - 90, it.msg.who === "you" ? 27 : 32, 18));
+  items.forEach(it => it.panel?.fit());
+
+  let t = t0;
+  mark(t);
+  fadeIn(layer, t, 400);
+  t += 200;
+  let scroll = 0;
+  const current = [];   // panel currently shown in each slot
+  const shown = [];
+
+  for (const it of items) {
+    mark(t);
+    // scroll so the whole message is in view, and quiet the ones above
+    const bottom = it.node.offsetTop + it.node.offsetHeight;
+    const target = Math.max(0, bottom - vh + 8);
+    if (target !== scroll) {
+      A(thread, [{ transform: `translateY(${-scroll}px)` }, { transform: `translateY(${-target}px)` }], t, 800);
+      scroll = target;
+      t += 450;
+    }
+    shown.forEach(s => A(s, [{ opacity: 1 }, { opacity: .42 }], t, 600, "ease-out"));
+    fadeUp(it.node, t, 500, 10);
+    shown.push(it.node);
+    t += 400;
+    const start = t;
+
+    if (it.msg.who === "you") {
+      const per = Math.min(26, 3600 / Math.max(it.units.length, 1));
+      it.units.forEach((c, i) => A(c, [{ opacity: 0 }, { opacity: 1 }], t + i * per, 60, "linear"));
+      t += it.units.length * per + 300;
+      for (const m of it.marks) {
+        const d = Math.max(500, Math.min(1100, m.textContent.length * 22));
+        underline(m, t, d, 3, "#d6d0c4", "#fff3e6");
+        t += d + 150;
+      }
+    } else {
+      const per = Math.min(50, 3200 / Math.max(it.units.length, 1));
+      it.units.forEach((w, i) => A(w, [{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }], t + i * per, 380));
+      t += it.units.length * per + 300;
+    }
+
+    if (it.panel) {
+      mark(t);
+      const prev = current[it.slot];
+      if (prev) A(prev.root, [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateX(-30px)" }], t, 450, "ease-in");
+      current[it.slot] = it.panel;
+      t = it.panel.play(t + (prev ? 250 : 0)) + 300;
+      if (it.msg.code?.glowAfter) { glowGroup(it.panel.groups[1] || [], t); t += 1600; }
+    }
+
+    if (it.msg.who === "model") {
+      if (it.marks.length) mark(t);
+      for (const m of it.marks) {
+        const d = Math.max(600, Math.min(2200, m.textContent.length * 14));
+        underline(m, t, d, 3, "#bdb7ab", "#f6f1e7");
+        t += d + 250;
+      }
+      if (it.msg.links) {
+        t += 300;
+        for (let k = 1; k <= 9; k++) {
+          const lines = current.flatMap(p => (p && p.groups[k]) || []);
+          if (!lines.length) continue;
+          glowGroup(lines, t);
+          t += 1700;
+        }
+      }
+      // reading time: about 3.5 words a second, plus a beat for the code
+      const words = it.units.length, code = it.panel ? it.panel.lineCount : 0;
+      t = Math.max(t + 1800, start + words * 285 + code * 90 + 1200);
+    } else {
+      t += it.panel ? 1800 : 1100;
+    }
+  }
+  t += 800;
+  fadeOut(layer, t, 600);
+  return t + 600;
+}
+
+function beatSplit(host, beat, t0) {
+  const layer = el("div", "layer split-layer");
+  host.append(layer);
+  const panels = beat.panels.map(p => buildCode(layer, { blocks: [p] }));
+  panels.forEach(p => p.fit());
+  // same type size on both sides
+  const size = Math.min(...panels.map(p => parseFloat(p.root.querySelector(".stack").style.fontSize)));
+  panels.forEach(p => p.root.querySelector(".stack").style.fontSize = size + "px");
+  let t = t0;
+  mark(t);
+  fadeIn(layer, t, 300);
+  const ends = panels.map((p, i) => p.play(t + i * 250));
+  t = Math.max(...ends) + 2200;
+  glowGroup(panels[0].groups[1] || [], t);
+  t += 2000;
+  glowGroup(panels[1].groups[1] || [], t);
+  t += 3200;
+  fadeOut(layer, t, 600);
+  return t + 600;
+}
+
+function beatQuote(host, beat, t0) {
+  const layer = el("div", "layer quote-layer");
+  layer.innerHTML = `<div class="who">⏺ ${esc(SHOW_CONFIG.modelLabel)}</div>`;
+  const big = el("div", "big");
+  if (beat.small) big.style.fontSize = "76px";
+  big.innerHTML = beat.text.replace(/\[\[([\s\S]*?)\]\]/g, '<span class="m">$1</span>');
+  layer.append(big);
+  host.append(layer);
+  let t = t0;
+  mark(t);
+  fadeIn(layer, t, 300);
+  fadeUp(layer.firstChild, t + 200, 500, 8);
+  fadeUp(big, t + 500, 1000, 30);
+  t += 1700;
+  for (const m of big.querySelectorAll(".m")) {
+    A(m, [{ backgroundSize: "0% 6px" }, { backgroundSize: "100% 6px" }], t, 1300, "ease-in-out");
+    t += 1450;
+  }
+  t += 3200;
+  fadeOut(layer, t, 700);
+  return t + 700;
+}
+
+function beatFan(host, beat, t0) {
+  const R = beat;
+  const layer = el("div", "layer");
+  const area = el("div", "readers");
+  layer.append(area);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  area.append(svg);
+  const card = el("div", "src-card", `<div class="bar"><div class="dots"><i></i><i></i><i></i></div><span>${esc(R.source.label)}</span></div>`);
+  const code = el("div", "code", R.source.lines.map(l => highlight(l)).join("\n"));
+  card.append(code);
+  area.append(card);
+  const readerEls = R.targets.map((tg, i) => {
+    const r = el("div", "reader");
+    r.style.top = (i * Math.min(126, (610 - 104) / Math.max(1, R.targets.length - 1))) + "px";
+    // <faint>…</faint> and <chip>…</chip> are styled spans; everything else is highlighted code
+    const body = tg.lines.map(l => l.split(/(<(?:faint|chip)>[\s\S]*?<\/(?:faint|chip)>)/).map(part => {
+      const m = part.match(/^<(faint|chip)>([\s\S]*)<\/\1>$/);
+      return m ? `<span class="${m[1]}">${esc(m[2])}</span>` : highlight(part);
+    }).join("")).join("\n");
+    r.innerHTML = `<div class="rbar"><b>${esc(tg.name)}</b><span>${esc(tg.verb)}</span></div><div class="rbody">${body}</div>`;
+    area.append(r);
+    return r;
+  });
+  const caption = el("div", "caption");
+  const { units, marks: capMarks } = renderText(caption, R.caption, false);
+  layer.append(caption);
+  host.append(layer);
+
+  card.style.top = ((610 - card.offsetHeight) / 2) + "px";
+  const cardGlows = wrapGlow(code, R.glow);
+  const readerGlows = readerEls.map(r => wrapGlow(r.querySelector(".rbody"), R.glow));
+
+  // curves from the card to each reader, and a dot riding each one
+  const x0 = card.offsetLeft + card.offsetWidth, y0 = card.offsetTop + card.offsetHeight / 2;
+  const routes = readerEls.map(r => {
+    const x1 = r.offsetLeft - 4, y1 = r.offsetTop + r.offsetHeight / 2, mx = (x0 + x1) / 2;
+    const d = `M${x0 + 4},${y0} C${mx},${y0} ${mx},${y1} ${x1},${y1}`;
+    const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("d", d); p.setAttribute("pathLength", "1"); svg.append(p);
+    const dot = el("div", "dot"); dot.style.offsetPath = `path("${d}")`; area.append(dot);
+    return { p, dot };
+  });
+
+  let t = t0;
+  mark(t);
+  fadeIn(layer, t, 300);
+  A(card, [{ opacity: 0, transform: "scale(.95)" }, { opacity: 1, transform: "none" }], t + 200, 800);
+  t += 1300;
+  cardGlows.forEach((g, i) => pulse(g, t + i * 200));
+  t += cardGlows.length * 200 + 900;
+  routes.forEach(({ p, dot }, i) => {
+    const s = t + i * 650;
+    A(p, [{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], s, 900, "ease-in-out");
+    A(dot, [{ offsetDistance: "0%", opacity: 0 }, { offsetDistance: "10%", opacity: 1, offset: .1 }, { offsetDistance: "100%", opacity: 1 }], s, 900, "ease-in-out");
+    A(dot, [{ opacity: 1 }, { opacity: 0 }], s + 950, 300);
+    A(readerEls[i], [{ opacity: 0, transform: "translateX(18px)" }, { opacity: 1, transform: "none" }], s + 750, 500);
+    readerGlows[i].forEach(g => pulse(g, s + 1100));
+  });
+  t += routes.length * 650 + 1800;
+
+  mark(t);
+  const per = Math.min(50, 3000 / units.length);
+  units.forEach((w, i) => A(w, [{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }], t + i * per, 380));
+  t += units.length * per + 300;
+  for (const m of capMarks) { underline(m, t, 2400, 3, "#bdb7ab", "#f6f1e7"); t += 2600; }
+  t = Math.max(t + 2500, t0 + units.length * 300 + 9000);
+  fadeOut(layer, t, 600);
+  return t + 600;
+}
+
+const BEATS = { thread: beatThread, split: beatSplit, quote: beatQuote, fan: beatFan };
+
+// ── segments of the show ──────────────────────────────────────────────────
+const SHOW = [];
+if (SHOW_CONFIG.intro) SHOW.push({ kind: "intro" });
+if (SHOW_CONFIG.opener) SHOW.push({ kind: "opener" });
+CHAPTERS.forEach((ch, ci) => SHOW.push({ kind: "chapter", ch, ci }));
+if (SHOW_CONFIG.outro) SHOW.push({ kind: "outro" });
+$("brand").textContent = SHOW_CONFIG.brand;
+
+const progress = $("progress");
+CHAPTERS.forEach(() => progress.append(el("i", null, "<b></b>")));
+
+function hideChrome(hidden) {
+  for (const id of ["top", "trule", "progress"]) $(id).style.visibility = hidden ? "hidden" : "visible";
+}
+
+// a title card: kicker, head with [[underlines]] drawn one after another, sub
+const markup = text => esc(text).replace(/\[\[([\s\S]*?)\]\]/g, '<span class="m">$1</span>');
+function titleCard(cfg, { hold, fadeOutAt }) {
+  const o = $("overlay");
+  o.innerHTML = `<div class="kicker">${esc(cfg.kicker)}</div><div class="head">${markup(cfg.head)}</div><div class="sub">${esc(cfg.sub)}</div>`;
+  if (cfg.head.length > 70) o.children[1].style.fontSize = "78px";
+  hideChrome(true);
+  A(o, [{ opacity: 0 }, { opacity: 1 }], 0, 500, "ease-out");
+  fadeUp(o.children[0], 300, 700);
+  fadeUp(o.children[1], 600, 900, 28);
+  let t = 1700;
+  for (const m of o.querySelectorAll(".m")) {
+    const d = Math.max(900, Math.min(1800, m.textContent.length * 30));
+    A(m, [{ backgroundSize: "0% 5px" }, { backgroundSize: "100% 5px" }], t, d, "ease-in-out");
+    t += d + 300;
+  }
+  fadeUp(o.children[2], t, 800);
+  t += hold;
+  if (fadeOutAt) { fadeOut(o, t, 600); t += 700; }
+  return t;
+}
+const buildIntro = () => titleCard(SHOW_CONFIG.intro, { hold: 2600, fadeOutAt: true });
+const buildOutro = () => titleCard(SHOW_CONFIG.outro, { hold: 4000, fadeOutAt: false });
+
+function buildOpener() {
+  const o = $("overlay");
+  o.innerHTML = `<div class="opener-who">❯ ${esc(SHOW_CONFIG.youLabel)}</div><div class="opener"></div>`;
+  const line = o.lastChild;
+  const chars = [...SHOW_CONFIG.opener].map(c => { const s = el("span", "c"); s.textContent = c; line.append(s); return s; });
+  const caret = el("span", "caret"); line.append(caret);
+  hideChrome(true);
+  A(o, [{ opacity: 1 }, { opacity: 1 }], 0, 1);
+  fadeUp(o.firstChild, 300, 500, 8);
+  let t = 900;
+  chars.forEach((c, i) => A(c, [{ opacity: 0 }, { opacity: 1 }], t + i * 55, 40, "linear"));
+  t += chars.length * 55;
+  A(caret, [{ opacity: 1 }, { opacity: 0, offset: .5 }, { opacity: 1 }], 0, t + 3400, "steps(1)");
+  t += 3200;
+  fadeOut(o, t, 700);
+  return t + 800;
+}
+
+function buildChapter({ ch, ci }) {
+  const o = $("overlay");
+  hideChrome(false);
+  $("tnum").textContent = String(ci + 1).padStart(2, "0");
+  $("ttitle").textContent = ch.title;
+  $("tsrc").textContent = ch.src;
+  [...progress.children].forEach((p, i) => p.classList.toggle("done", i < ci));
+
+  o.innerHTML = `<div class="big">${String(ci + 1).padStart(2, "0")}</div><div class="head">${esc(ch.title)}</div><div class="sub">${esc(ch.src)}</div><div class="line"></div>`;
+  A(o, [{ opacity: 1, transform: "none" }, { opacity: 1, transform: "none" }], 0, 1);
+  fadeUp(o.children[0], 0, 700, 30);
+  fadeUp(o.children[1], 200, 800, 30);
+  fadeUp(o.children[2], 600, 700);
+  A(o.children[3], [{ width: "0px" }, { width: "420px" }], 700, 1100);
+  A(o, [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateY(-30px)" }], 2500, 600, "ease-in");
+  A($("top"), [{ opacity: 0, transform: "translateY(-10px)" }, { opacity: 1, transform: "none" }], 2600, 600);
+
+  let t = 2900;
+  // the chapter card itself is step 0; each beat marks its own start
+  for (const beat of ch.beats) t = BEATS[beat.type]($("content"), beat, t) + 200;
+  A(progress.children[ci].firstChild, [{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }], 0, t, "linear");
+  return t;
+}
+
+// ── player ────────────────────────────────────────────────────────────────
+// One clock per segment drives every animation (all held paused), so a seek
+// to any time, forwards or backwards, lands on exactly that frame.
+let cur = 0, paused = false, clock = 0, endAt = 0, last = performance.now(), tcTimer = 0;
+function clear() {
+  anims.splice(0).forEach(a => a.cancel());
+  marks = [];
+  seen = new WeakSet();
+  $("content").innerHTML = "";
+  $("overlay").innerHTML = "";
+}
+function go(i, at = 0) {
+  cur = Math.max(0, Math.min(SHOW.length - 1, i));
+  clear();
+  const seg = SHOW[cur];
+  const build = { intro: buildIntro, opener: buildOpener, outro: buildOutro, chapter: buildChapter }[seg.kind];
+  mark(0);
+  endAt = build(seg);
+  // points closer than 400ms collapse into the first
+  marks = marks.sort((a, b) => a - b).filter((m, i, all) => i === 0 || m - all[i - 1] >= 400);
+  seek(at === "end" ? marks[marks.length - 1] : at);
+}
+function seek(ms) {
+  clock = Math.max(0, Math.min(endAt, ms));
+  for (const a of anims) a.currentTime = clock;
+  showTime();
+}
+// ms past the end of this segment carry into the next; before 0, into the previous
+function seekBy(ms) {
+  const to = clock + ms;
+  if (to > endAt && cur < SHOW.length - 1) return go(cur + 1, to - endAt);
+  if (to < 0 && cur > 0) { go(cur - 1); return seek(endAt + to); }
+  seek(to);
+}
+// steps between seek points: a message, a beat, a phase of a beat
+function step(dir) {
+  if (dir > 0) {
+    const next = marks.find(m => m > clock + 50);
+    return next === undefined ? go(cur + 1) : seek(next);
+  }
+  // pressed right after landing on a point, keep going back
+  const prev = [...marks].reverse().find(m => m < clock - 700);
+  return prev === undefined ? (cur > 0 ? go(cur - 1, "end") : seek(0)) : seek(prev);
+}
+function fmt(ms) { const s = ms / 1000; return `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`; }
+function showTime() {
+  const seg = SHOW[cur];
+  const name = seg.kind === "chapter" ? String(seg.ci + 1).padStart(2, "0") : seg.kind;
+  const at = marks.filter(m => m <= clock).length;
+  $("tc").textContent = `${paused ? "❚❚ " : ""}${name} · ${fmt(clock)} / ${fmt(endAt)} · step ${at}/${marks.length}`;
+  $("tc").classList.add("on");
+  clearTimeout(tcTimer);
+  tcTimer = setTimeout(() => $("tc").classList.remove("on"), 1400);
+}
+function tick(now) {
+  const dt = now - last; last = now;
+  if (!paused) {
+    clock += dt * SPEED;
+    if (clock >= endAt && cur < SHOW.length - 1) go(cur + 1);
+    else for (const a of anims) a.currentTime = Math.min(clock, endAt);
+  }
+  requestAnimationFrame(tick);
+}
+function setPaused(p) {
+  paused = p;
+  $("stage").classList.toggle("paused", p);
+  showTime();
+}
+addEventListener("keydown", e => {
+  const k = e.key;
+  if (k === " ") { e.preventDefault(); setPaused(!paused); }
+  else if (k === "ArrowRight") e.shiftKey ? go(cur + 1) : step(1);
+  else if (k === "ArrowLeft") e.shiftKey ? go(clock > 1500 ? cur : cur - 1) : step(-1);
+  else if (k === ".") seekBy(1000);
+  else if (k === ",") seekBy(-1000);
+  else if (k === ">") seekBy(5000);
+  else if (k === "<") seekBy(-5000);
+  else if (k === "Home") seek(0);
+  else if (k === "End") seek(marks[marks.length - 1]);
+  else if (k === "r" || k === "R") go(0);
+  else if (k === "h" || k === "H") $("hud").classList.toggle("off");
+  else return;
+  e.preventDefault();
+});
+
+function scale() {
+  const s = Math.min(innerWidth / 1920, innerHeight / 1080);
+  $("stage").style.transform = `scale(${s})`;
+}
+addEventListener("resize", scale); scale();
+setTimeout(() => $("hud").classList.add("off"), 3500);
+
+// for scripts/frames.mjs and other headless checks
+window.player = { go, seek, setPaused, step, get state() { return { segment: cur, clock, endAt, marks: [...marks], segments: SHOW.length }; } };
+
+const start = parseInt(params.get("scene") || "0", 10);
+document.fonts.ready.then(() => { go(start); requestAnimationFrame(t => { last = t; tick(t); }); });
+</script>
+</body>
+</html>
