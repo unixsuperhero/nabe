@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/unixsuperhero/ochazuke"
@@ -24,7 +25,9 @@ import (
 // completion refreshes the extension's rows (afterVerb). An extension
 // whose catalog names a state source (state, NOUN.VERB) has every list's
 // rows from one `<bin> NOUN VERB --json {}`, JSON Lines tagged by list noun
-// (reloadRows); without one, a noun with a row source loads from
+// (reloadRows; a catalog declaring stateDelta is sent the page's list
+// hashes and answers only what changed, applied by PageView.ApplyState);
+// without one, a noun with a row source loads from
 // `<bin> NOUN VERB --json {}` (loadList). The framework draws the page, the
 // groups rail, the lists, their columns and the verb rows of a noun
 // without a row source (enter running the verb). The catalog's binding
@@ -58,6 +61,18 @@ type mounted struct {
 	// serves from a cache (sources.go); nil from the CLI, whose parameters
 	// name the mounted proxy instead.
 	sources map[string]*choiceSource
+	// freshNext asks the next state fetch through FetchFlags (an explicit
+	// refresh's PageView.Refresh) for {"fresh":true}; read off the loop.
+	freshNext atomic.Bool
+	// refreshAsked is an explicit refresh running through the page's own
+	// reload, so the status line says refreshing while its job runs.
+	refreshAsked bool
+}
+
+// deltas reports whether m's state source answers what changed since the
+// rows the page holds (the catalog's stateDelta; cli.StateDeltaVersion).
+func (m *mounted) deltas() bool {
+	return m.view != nil && m.doc.State != "" && m.doc.StateDelta >= 1
 }
 
 // Refreshing.
@@ -283,6 +298,16 @@ func (a *App) mountPage(m *mounted, lists []cli.CatalogList) error {
 		Fetch: func(ctx context.Context, noun, verb string) ([]byte, error) {
 			return execBin(ctx, m.bin, noun, verb, "--json", "{}")
 		},
+		// The timer's reload asks a delta-speaking state source what
+		// changed since the rows the page holds (--since); an unchanged
+		// answer touches no row. Off the loop: freshNext is atomic.
+		FetchFlags: func(ctx context.Context, noun, verb string, flags []string) ([]byte, error) {
+			args := "{}"
+			if m.freshNext.Swap(false) {
+				args = m.args(noun+"."+verb, true)
+			}
+			return execBin(ctx, m.bin, append([]string{noun, verb, "--json", args}, flags...)...)
+		},
 		OnRows: func(list string, rows []cli.Row) { a.listChoices(m, list, rows) },
 	})
 	if err != nil {
@@ -302,7 +327,10 @@ func (a *App) mountPage(m *mounted, lists []cli.CatalogList) error {
 // failed pick-list sources and the last verb's result.
 func (a *App) statusLine(m *mounted) string {
 	var parts []string
-	if a.refreshing(m) {
+	if m.refreshAsked && !a.pageLoading(m) {
+		m.refreshAsked = false
+	}
+	if a.refreshing(m) || m.refreshAsked {
 		parts = append(parts, map[bool]string{false: "loading…", true: "refreshing…"}[m.loaded])
 	}
 	parts = append(parts, m.sourceErrs()...)
@@ -502,9 +530,21 @@ func (a *App) afterVerb(m *mounted, noun string) {
 
 // reload refreshes every list of m (reloadRows) and the pick-list sources
 // no list answers (loadSources). fresh asks a source that declares it to
-// skip its cache.
+// skip its cache. An explicit refresh (fresh) of a delta-speaking state
+// source is PageView.Refresh: the page forgets its list hashes and asks
+// for every list in full ({"fresh":true} when the source declares it).
 func (a *App) reload(m *mounted, fresh bool) {
-	a.reloadRows(m, fresh)
+	if fresh && m.deltas() {
+		m.freshNext.Store(true)
+		m.refreshAsked = true
+		if err := m.view.Refresh(); err != nil {
+			m.freshNext.Store(false)
+			m.refreshAsked = false
+			a.listErr(m, err)
+		}
+	} else {
+		a.reloadRows(m, fresh)
+	}
 	a.loadSources(m, fresh)
 }
 
@@ -522,12 +562,24 @@ func (a *App) reloadRows(m *mounted, fresh bool) {
 		}
 		return
 	}
+	a.streamState(m, fresh, false)
+}
+
+// streamState runs the state exec, its stdout read in batches (nextBatch).
+// A delta-speaking source is sent the page's list hashes
+// (PageView.SinceFlags), so it answers only what changed; retry is the one
+// full refetch of lists whose hashes did not match after applying.
+func (a *App) streamState(m *mounted, fresh, retry bool) {
 	noun, verb, _ := strings.Cut(m.doc.State, ".")
 	args := []string{noun, verb, "--json", m.args(m.doc.State, fresh)}
+	if m.deltas() {
+		args = append(args, m.view.SinceFlags()...)
+	}
 	if m.stream != nil {
 		m.stream.stop() // a newer load replaces it
 	}
 	st := newStateLoad()
+	st.retry = retry
 	m.stream = st
 	st.ctx, st.cancel = context.WithTimeout(context.Background(), execTimeout)
 	a.nextBatch(m, st, m.bin, args)
@@ -553,6 +605,24 @@ type stateLoad struct {
 	rr     *cli.RowReader
 	rows   []cli.Row       // rows so far, every noun
 	seen   map[string]bool // noun/id already filed
+	retry  bool            // the refetch after a hash mismatch
+}
+
+// whole reports whether every list the answer has named so far is
+// answered in full, so the rows so far replace lists (SetState): a plain
+// answer, or a delta answer of full lists (the first load: no hashes).
+func (st *stateLoad) whole() bool {
+	a := st.answer()
+	return !a.Delta || !slices.ContainsFunc(a.Lists, func(l cli.StateList) bool { return l.Answer != cli.AnswerFull })
+}
+
+// answer is the stream's answer so far (RowReader.Answer); a plain one
+// before the exec starts.
+func (st *stateLoad) answer() cli.StateAnswer {
+	if st.rr == nil {
+		return cli.StateAnswer{}
+	}
+	return st.rr.Answer()
 }
 
 func newStateLoad() *stateLoad { return &stateLoad{seen: map[string]bool{}} }
@@ -632,7 +702,10 @@ func (a *App) nextBatch(m *mounted, st *stateLoad, bin string, args []string) {
 
 // stateBatch files a batch's rows under their lists (PageView.SetState);
 // the first load shows them at once, and the stream's end sets every list
-// (a noun without lines has no rows).
+// (a noun without lines has no rows). A delta answer is applied whole at
+// the stream's end (PageView.ApplyState): an unchanged list is not
+// touched, a changed one patched; lists whose hash then does not match
+// are fetched again in full, once.
 func (a *App) stateBatch(m *mounted, st *stateLoad, b stateBatch) {
 	touched := false
 	for _, row := range b.rows {
@@ -643,14 +716,29 @@ func (a *App) stateBatch(m *mounted, st *stateLoad, b stateBatch) {
 		st.rows = append(st.rows, row)
 		touched = true
 	}
-	if b.done || !m.loaded && touched {
+	if !b.done && !m.loaded && touched && st.whole() {
 		if err := m.view.SetState(st.rows); err != nil {
 			a.listErr(m, err)
 		}
 	}
-	if b.done {
-		m.loaded, m.stream = true, nil
-		st.stop()
+	if !b.done {
+		return
+	}
+	m.loaded, m.stream = true, nil
+	st.stop()
+	answer := st.answer()
+	if !answer.Delta {
+		if err := m.view.SetState(st.rows); err != nil {
+			a.listErr(m, err)
+		}
+		return
+	}
+	bad, err := m.view.ApplyState(answer)
+	if err != nil {
+		a.listErr(m, err)
+	}
+	if len(bad) > 0 && !st.retry {
+		a.streamState(m, false, true)
 	}
 }
 
@@ -720,6 +808,14 @@ func (a *App) loadIn(owner, slot string, fetch func(context.Context) (any, error
 	if _, err := a.r.Launch(owner, refreshVerb, res, ochazuke.Ctx{Runtime: a.r}); err != nil {
 		apply(nil, err)
 	}
+}
+
+// pageLoading reports whether the page's own reload (PageView.Reload or
+// Refresh, under cli.LoadVerb) runs.
+func (a *App) pageLoading(m *mounted) bool {
+	return slices.ContainsFunc(a.r.Jobs(), func(j ochazuke.JobInfo) bool {
+		return j.State == ochazuke.JobRunning && j.Verb == cli.LoadVerb && j.Owner == m.page
+	})
 }
 
 // refreshing reports whether a load of m runs.
