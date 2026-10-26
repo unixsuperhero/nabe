@@ -180,11 +180,12 @@ func (a *App) mount(name string, e Entry) error {
 			if v.Confirm != "" {
 				b.Confirm(v.Confirm)
 			}
+			op := r.Operations[local+"."+v.Name]
 			if len(v.Params) > 0 {
-				op := r.Operations[local+"."+v.Name]
 				op.Parameters = maps.Clone(v.Params)
-				r.Operations[op.Key()] = op
 			}
+			op.HistoryKind = a.historyKind(name, n.Name, v)
+			r.Operations[op.Key()] = op
 		}
 	}
 	mounted := maps.Clone(m.nouns)
@@ -234,6 +235,20 @@ func (a *App) mount(name string, e Entry) error {
 	a.loadBindings(m, e.Catalog.Bindings, mounted, homes)
 	a.exts = append(a.exts, m)
 	return nil
+}
+
+// historyKind is the history kind a mounted verb records: the catalog
+// verb's own (cli.CatalogVerb.History), so an extension's fetches stay out
+// of the user's entries here as they do in the extension. A verb without
+// one keeps the framework default (change, for an application verb); a
+// kind the framework does not know is a notice and the default.
+func (a *App) historyKind(ext, noun string, v cli.CatalogVerb) string {
+	switch v.History {
+	case "", ochazuke.HistoryAction, ochazuke.HistoryChange, ochazuke.HistoryFetch:
+		return v.History
+	}
+	a.warn("%s: %s %s declares history %q, not action, change or fetch; recording it as a change", ext, noun, v.Name, v.History)
+	return ""
 }
 
 // applicationDoc is a catalog with only its application verbs (planOf's

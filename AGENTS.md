@@ -44,6 +44,7 @@ nabe keeps no copy of these; use them rather than rebuilding them.
 | `cli.Settle(r, before)` | `--smoke` and the tests settle pending work without a Bubble Tea loop |
 | `cli.Shell` positional words (`Operation.ParameterOrder`), verb prefixes; `cli.Mount` noun prefixes | `nabe ext reg BIN [NAME]` |
 | catalog `pin` on nouns, `rows` on verbs (`cli.CatalogNoun`, `cli.CatalogVerb`) | which nouns mount; which noun a list verb's rows answer to |
+| catalog `history` on verbs (`cli.CatalogVerb.History`), `Operation.HistoryKind` | a mounted verb records the extension's own kind (`historyKind`; none is the default, change), so its fetches stay out of the user's history |
 | Tables (`ochazuke.Column`, `Columns(...)`, `ListItem.Cells`); catalog `columns` on nouns, `cells` on rows (`cli.CatalogNoun.Columns`, `cli.Row.Cells`) | a mounted list draws its row noun's columns (`cli.MountPage` reads `CatalogDoc.ListColumns`); the extensions page is a table (`extensionColumns`: name, nouns, verbs, pages, refreshed, version, bin) |
 
 ## Invariants

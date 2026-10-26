@@ -11,7 +11,7 @@
     ]},
     {"name": "tool", "verbs": [
       {"name": "echo", "description": "Echo the text", "kind": "application", "params": {"text": {"type": "string", "required": true}, "voice": {"type": "string", "source": "tool.voices"}}},
-      {"name": "ping", "description": "Answer pong", "kind": "application"},
+      {"name": "ping", "description": "Answer pong", "kind": "application", "history": "fetch"},
       {"name": "voices", "description": "List the voices", "kind": "application"}
     ]},
     {"name": "projects", "verbs": [
