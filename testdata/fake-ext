@@ -54,6 +54,7 @@ case "$1 $2" in
 	printf '{"removed":"%s"}\n' "$target"
 	;;
 "tool ping") echo '{"pong":true}' ;;
+"tool voices") echo '["loud","soft"]' ;;
 "projects list") echo '[{"id":"p1","name":"pone"}]' ;;
 "project open") printf '{"opened":"%s"}\n' "$target" ;;
 "tool echo") echo "$4" ;;

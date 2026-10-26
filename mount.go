@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -51,6 +52,10 @@ type mounted struct {
 	stream   *stateLoad      // the running state load, nil when none
 	fresh    map[string]bool // extension noun.verb -> declares a boolean fresh
 	every    time.Duration   // the refresh interval; 0 never
+	// sources are the pick-list sources (extension noun.verb) the TUI
+	// serves from a cache (sources.go); nil from the CLI, whose parameters
+	// name the mounted proxy instead.
+	sources map[string]*choiceSource
 }
 
 // Refreshing.
@@ -80,6 +85,9 @@ type nounList struct {
 	rowNoun string
 	err     string // why the last row load failed
 	loaded  bool   // its first load landed (lists loaded on their own)
+	// choices is the pick-list source this list's rows answer (its row
+	// source is some parameter's source), nil when none.
+	choices *choiceSource
 }
 
 // localNoun is the nabe noun of an extension's noun. A dot would split the
@@ -133,7 +141,7 @@ func (a *App) warn(format string, args ...any) {
 // no list of its own: its verbs answer on those rows.
 func (a *App) mount(name string, e Entry) error {
 	r := a.r
-	m := &mounted{name: name, bin: e.Bin, page: "ext/" + name, state: e.Catalog.State, fresh: map[string]bool{}, every: defaultRefreshEvery}
+	m := &mounted{name: name, bin: e.Bin, page: "ext/" + name, state: e.Catalog.State, fresh: map[string]bool{}, every: defaultRefreshEvery, sources: map[string]*choiceSource{}}
 	if _, err := r.AddPage(m.page, name, a.renderMounted(m)); err != nil {
 		return err
 	}
@@ -177,7 +185,7 @@ func (a *App) mount(name string, e Entry) error {
 			}
 			if len(v.Params) > 0 {
 				op := r.Operations[local+"."+v.Name]
-				op.Parameters = withoutSources(v.Params)
+				op.Parameters = maps.Clone(v.Params)
 				r.Operations[op.Key()] = op
 			}
 		}
@@ -253,6 +261,7 @@ func (a *App) mount(name string, e Entry) error {
 			}
 		}
 	}
+	a.mountSources(m, nouns, mountedNouns)
 	a.loadBindings(m, e.Catalog.Bindings, mountedNouns, homes)
 	a.exts = append(a.exts, m)
 	return nil
@@ -292,17 +301,6 @@ func rowSource(n cli.CatalogNoun) (verb, rows string) {
 		}
 	}
 	return "", ""
-}
-
-// withoutSources copies params without their pick-list sources: a source
-// names an operation of the extension's runtime, not nabe's.
-func withoutSources(params map[string]ochazuke.Parameter) map[string]ochazuke.Parameter {
-	out := make(map[string]ochazuke.Parameter, len(params))
-	for k, p := range params {
-		p.Source = ""
-		out[k] = p
-	}
-	return out
 }
 
 // verbRows fills a noun's list with one row per verb, each answering the
@@ -520,7 +518,7 @@ func (a *App) tick(m *mounted) {
 // else only the lists that hold the noun's rows.
 func (a *App) afterVerb(m *mounted, noun string) {
 	if m.state != "" {
-		a.reload(m, false)
+		a.reloadRows(m, false)
 		return
 	}
 	local := localNoun(m.name, noun)
@@ -531,11 +529,18 @@ func (a *App) afterVerb(m *mounted, noun string) {
 	}
 }
 
-// reload refreshes every list of m: one state exec whose answer fills each
-// list by its noun (a noun the answer omits loads on its own), else one
-// row-source exec per list. fresh asks a source that declares it to skip
-// its cache.
+// reload refreshes every list of m (reloadRows) and the pick-list sources
+// no list answers (loadSources). fresh asks a source that declares it to
+// skip its cache.
 func (a *App) reload(m *mounted, fresh bool) {
+	a.reloadRows(m, fresh)
+	a.loadSources(m, fresh)
+}
+
+// reloadRows refreshes every list of m: one state exec whose answer fills
+// each list by its noun (a noun the answer omits loads on its own), else
+// one row-source exec per list.
+func (a *App) reloadRows(m *mounted, fresh bool) {
 	if m.state == "" {
 		for _, l := range m.lists {
 			if l.source != "" {
@@ -738,11 +743,16 @@ func (a *App) loadList(m *mounted, l *nounList, fresh bool) {
 // load runs fetch as a quiet job in owner's rows slot (a newer load
 // replaces an older one) and apply on its completion; inline in sync mode.
 func (a *App) load(owner string, fetch func(context.Context) (any, error), apply func(any, error)) {
+	a.loadIn(owner, "rows", fetch, apply)
+}
+
+// loadIn is load in a slot of its own.
+func (a *App) loadIn(owner, slot string, fetch func(context.Context) (any, error), apply func(any, error)) {
 	if a.sync {
 		apply(fetch(context.Background()))
 		return
 	}
-	res := ochazuke.Pending(fetch).Replacing("rows").Then(func(_ ochazuke.Ctx, v any, err error) { apply(v, err) })
+	res := ochazuke.Pending(fetch).Replacing(slot).Then(func(_ ochazuke.Ctx, v any, err error) { apply(v, err) })
 	if _, err := a.r.Launch(owner, refreshVerb, res, ochazuke.Ctx{Runtime: a.r}); err != nil {
 		apply(nil, err)
 	}
@@ -800,7 +810,17 @@ func (a *App) setItems(l *nounList, rows []ochazuke.ListItem) error {
 		}
 		items = append(items, ochazuke.ListItem{ID: l.id + "/" + row.ID, Label: label, Noun: l.rowNoun, Data: row.ID, Cells: row.Cells})
 	}
-	return l.list.SetItems(items)
+	if err := l.list.SetItems(items); err != nil {
+		return err
+	}
+	if l.choices != nil {
+		ids := make([]string, len(items))
+		for i, item := range items {
+			ids[i] = item.Data.(string)
+		}
+		a.setChoices(l.choices, ids)
+	}
+	return nil
 }
 
 // cellsOf reads a row object's cells (an array of strings), else none.
@@ -888,7 +908,7 @@ func (a *App) renderMounted(m *mounted) func(*ochazuke.Runtime, int, int) ochazu
 			}
 		}
 		var status []string
-		for _, line := range []string{busy, m.stateErr, m.status} {
+		for _, line := range append([]string{busy, m.stateErr}, append(m.sourceErrs(), m.status)...) {
 			if line != "" {
 				status = append(status, s.Muted.Render(ansi.Truncate(line, rw, "…")))
 			}

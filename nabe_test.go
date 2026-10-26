@@ -71,7 +71,7 @@ func TestRegisterWritesTheFileAndPrintsTheSummary(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &s); err != nil {
 		t.Fatalf("stdout %q: %v", out, err)
 	}
-	if want := "fake: 4 nouns, 7 verbs, 0 pages (framework nouns skipped: 2)"; s.Summary != want {
+	if want := "fake: 4 nouns, 8 verbs, 0 pages (framework nouns skipped: 2)"; s.Summary != want {
 		t.Fatalf("summary %q, want %q", s.Summary, want)
 	}
 	raw, err := os.ReadFile(filepath.Join(data, "catalogs", "fake.json"))
@@ -110,7 +110,7 @@ func TestListRefreshAndUnregister(t *testing.T) {
 	state, data := registered(t)
 	out, _, err := nabe(t, "-data", data, "extension", "list")
 	var rows []Listing
-	if err != nil || json.Unmarshal([]byte(out), &rows) != nil || len(rows) != 1 || rows[0].Name != "fake" || rows[0].Nouns != 4 || rows[0].Verbs != 7 {
+	if err != nil || json.Unmarshal([]byte(out), &rows) != nil || len(rows) != 1 || rows[0].Name != "fake" || rows[0].Nouns != 4 || rows[0].Verbs != 8 {
 		t.Fatalf("list: %v %q", err, out)
 	}
 	if out, _, err := nabe(t, "-data", data, "extension", "refresh"); err != nil || !strings.Contains(out, `"summary":"fake: 4 nouns`) {
@@ -441,8 +441,8 @@ func TestExecBudget(t *testing.T) {
 		startup []string
 		verb    []string
 	}{
-		{"state", []string{"item state --json {}"}, []string{"item touch --target a1 --json {} --yes", "item state --json {}"}},
-		{"", []string{"item list --json {}", "projects list --json {}"}, []string{"item touch --target a1 --json {} --yes", "item list --json {}"}},
+		{"state", []string{"item state --json {}", "tool voices --json {}"}, []string{"item touch --target a1 --json {} --yes", "item state --json {}"}},
+		{"", []string{"item list --json {}", "projects list --json {}", "tool voices --json {}"}, []string{"item touch --target a1 --json {} --yes", "item list --json {}"}},
 	} {
 		t.Run("mode="+c.mode, func(t *testing.T) {
 			bin, state, data := fake(t)
@@ -503,9 +503,9 @@ func TestExecBudget(t *testing.T) {
 			if err := cli.Settle(a.r, nil); err != nil {
 				t.Fatal(err)
 			}
-			want := []string{"catalog", "item list --json {}", "projects list --json {}"}
+			want := []string{"catalog", "item list --json {}", "projects list --json {}", "tool voices --json {}"}
 			if c.mode == "state" {
-				want = []string{"catalog", `item state --json {"fresh":true}`}
+				want = []string{"catalog", `item state --json {"fresh":true}`, "tool voices --json {}"}
 			}
 			if got := execsAfter(t, state, mark); !slices.Equal(got, want) {
 				t.Fatalf("extension refresh execs %q, want %q", got, want)

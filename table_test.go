@@ -88,7 +88,7 @@ func TestExtensionsPageIsATable(t *testing.T) {
 		t.Fatal(err)
 	}
 	row := a.extList.Items()[0]
-	if row.Label == "" || len(row.Cells) != len(extensionColumns) || row.Cells[0] != "fake" || row.Cells[1] != "4" || row.Cells[2] != "7" || row.Cells[3] != "0" || row.Cells[4] == "" {
+	if row.Label == "" || len(row.Cells) != len(extensionColumns) || row.Cells[0] != "fake" || row.Cells[1] != "4" || row.Cells[2] != "8" || row.Cells[3] != "0" || row.Cells[4] == "" {
 		t.Fatalf("row %+v", row)
 	}
 	a.m.Width, a.m.Height = 120, 12

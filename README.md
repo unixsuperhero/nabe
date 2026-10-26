@@ -97,6 +97,7 @@ execs = {
   everyInterval:     "the same load, on a quiet timer (refreshEvery, default 60s)",
   afterVerb:         "the verb itself, then the state (or only the verb's own list)",
   extensionRefresh:  "catalog, then the state with --json '{\"fresh\":true}' when the source declares fresh",
+  choiceSources:     "with every load above but afterVerb: each parameter source no list's rows answer (BIN NOUN VERB --json {})",
   keysFocusPages:    "never: j/k, }, ctrl+j and page switches draw the cached rows",
 }
 ```
@@ -117,7 +118,7 @@ nabe reads the stream as it arrives (`cli.NewRowReader`: batches of 200 rows or 
 
 - Mounting reads the registry once at startup; restart nabe after `register`, `refresh`, `order` or `unregister`.
 - A catalog without `rows` keeps the old shape: rows of `projects list` are `mtm-projects` rows, and a noun such as `project` sits on verb rows without a target.
-- Parameter pick lists (`source`) name the extension's own operations; nabe does not yet run them through the bin, so they are dropped. Enums stay.
+- Parameter pick lists (`source`, an extension `NOUN.VERB`) reach the palette and the CLI only when the source's noun is mounted (else a notice drops it). From the CLI the parameter names the mounted proxy (`help` says `choices from: mtm-projects.list`) and a value is checked against its answer. In the TUI the choices are a cache: the rows of the list that source fills, else one quiet `BIN NOUN VERB --json {}` with every row load (startup, the timer, `extension refresh`; not after a verb). Until it lands any value is accepted; the pick list shows ids, not labels.
 - Pattern rows (`digit`, `any`) are not compared for collisions; only the first key of a sequence is.
 - From nabe's CLI, a mounted verb runs without `--target` (nabe's instance ids are not the extension's); use the extension's own CLI to target a row.
 - Exec only, one process per call, 60 s per call.
