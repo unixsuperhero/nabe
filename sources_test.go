@@ -11,9 +11,9 @@ import (
 
 // In the TUI a parameter's pick-list source is a cache in its Enum: the
 // rows of the list the source fills (item.list), else one quiet load of
-// the source with the rows (tool.voices). Until it lands the parameter is
-// Free; afterwards the palette's choices come from it without an exec and
-// a value outside them is refused before the bin runs.
+// the source with the rows (tool.voices). The palette's choices come from
+// it without an exec. The choices are suggestions: the parameter is Free,
+// so a value outside them reaches the bin, which validates its own.
 func TestSourcesFillPickListsInTheTUI(t *testing.T) {
 	state, data := registered(t)
 	a, err := New(Options{Data: data})
@@ -29,10 +29,10 @@ func TestSourcesFillPickListsInTheTUI(t *testing.T) {
 	if err := cli.Settle(a.r, nil); err != nil {
 		t.Fatal(err)
 	}
-	if p := note(); p.Source != "" || p.Free || !slices.Equal(p.Enum, []string{"a1", "b2"}) {
+	if p := note(); p.Source != "" || !p.Free || !slices.Equal(p.Enum, []string{"a1", "b2"}) {
 		t.Fatalf("note after the load: %+v", p)
 	}
-	if p := voice(); p.Source != "" || p.Free || !slices.Equal(p.Enum, []string{"loud", "soft"}) {
+	if p := voice(); p.Source != "" || !p.Free || !slices.Equal(p.Enum, []string{"loud", "soft"}) {
 		t.Fatalf("voice after the load: %+v", p)
 	}
 	mark := len(calls(t, state))
@@ -43,20 +43,18 @@ func TestSourcesFillPickListsInTheTUI(t *testing.T) {
 	if err := a.r.List("ext/fake/item").Focus(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.r.Execute(ochazuke.Request{Noun: "fake-item", Verb: "touch", Args: ochazuke.Arguments{"note": "zz"}}); err == nil {
-		t.Fatal("a note outside the source's choices ran")
-	}
 	if got := execsAfter(t, state, mark); len(got) != 0 {
-		t.Fatalf("choices and a refused value exec %q", got)
+		t.Fatalf("choices exec %q", got)
 	}
-	if _, err := a.r.Execute(ochazuke.Request{Noun: "fake-item", Verb: "touch", Args: ochazuke.Arguments{"note": "b2"}}); err != nil {
-		t.Fatal(err)
+	if _, err := a.r.Execute(ochazuke.Request{Noun: "fake-item", Verb: "touch", Args: ochazuke.Arguments{"note": "zz"}}); err != nil {
+		t.Fatalf("a note outside the source's choices was refused: %v", err)
 	}
 	if err := cli.Settle(a.r, nil); err != nil {
 		t.Fatal(err)
 	}
-	// The verb reloads the rows (and so note's choices), not voices.
-	want := []string{`item touch --target a1 --json {"note":"b2"} --yes`, "item list --json {}"}
+	// The value reaches the bin; the verb reloads the rows (and so note's
+	// choices), not voices.
+	want := []string{`item touch --target a1 --json {"note":"zz"} --yes`, "item list --json {}"}
 	if got := execsAfter(t, state, mark); !slices.Equal(got, want) {
 		t.Fatalf("verb execs %q, want %q", got, want)
 	}
@@ -73,21 +71,21 @@ func TestSourcesFillPickListsInTheTUI(t *testing.T) {
 	}
 }
 
-// From the CLI a source names the mounted proxy: it runs inline to check
-// the value, and help says where the choices come from.
+// From the CLI a source names the mounted proxy, so help says where the
+// choices come from; they are suggestions: a value outside them (a custom
+// id the bin accepts, as mtm's --model does) goes to the bin unchecked,
+// and the source never runs to check it.
 func TestSourcesNameTheProxyFromTheCLI(t *testing.T) {
 	state, data := registered(t)
-	out, errOut, err := nabe(t, "-data", data, "fake-tool", "echo", "hi", "--voice", "loud")
-	if err != nil {
-		t.Fatalf("echo --voice loud: %v\n%s\n%s", err, out, errOut)
+	for _, voice := range []string{"loud", "shout"} {
+		mark := len(calls(t, state))
+		out, errOut, err := nabe(t, "-data", data, "fake-tool", "echo", "hi", "--voice", voice)
+		want := []string{`tool echo --json {"text":"hi","voice":"` + voice + `"} --yes`}
+		if got := execsAfter(t, state, mark); err != nil || !slices.Equal(got, want) {
+			t.Fatalf("echo --voice %s: %v execs %q, want %q\n%s\n%s", voice, err, got, want, out, errOut)
+		}
 	}
-	if got := calls(t, state); !slices.Contains(got, "tool voices --json {} --yes") {
-		t.Fatalf("the source did not run: %q", got)
-	}
-	if _, _, err := nabe(t, "-data", data, "fake-tool", "echo", "hi", "--voice", "shout"); err == nil || !strings.Contains(err.Error(), "loud") {
-		t.Fatalf("echo --voice shout: %v", err)
-	}
-	out, _, err = nabe(t, "-data", data, "fake-tool", "echo", "--help")
+	out, _, err := nabe(t, "-data", data, "fake-tool", "echo", "--help")
 	if err != nil || !strings.Contains(out, "choices from: fake-tool.voices") {
 		t.Fatalf("help: %v\n%s", err, out)
 	}

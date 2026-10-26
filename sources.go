@@ -17,15 +17,19 @@ import (
 // framework a source two ways:
 //
 //   - the CLI (Options.Sync) names the mounted proxy of the source
-//     (<ext>-<noun>.<verb>): it runs inline there, so `nabe NOUN VERB`
-//     checks the value and help says where the choices come from;
+//     (<ext>-<noun>.<verb>), so help says where the choices come from;
 //   - the TUI never execs on the loop, so a parameter's source is a cache
 //     written into its Enum: the rows of the list whose row source is the
 //     source (no extra exec), else one quiet load of the source with the
 //     rows (reload: startup, the timer, extension refresh; not after a
-//     verb). Until the cache lands the parameter is Free, so nothing is
-//     refused for want of choices. Enum has no labels: the pick list shows
-//     the ids.
+//     verb). Enum has no labels: the pick list shows the ids.
+//
+// Source-backed choices are suggestions only: every such parameter is
+// Free, so nabe never refuses a value outside them (and the CLI never
+// runs the source to check one). The catalog does not carry a parameter's
+// free flag, and the bin validates its own arguments anyway (mtm's
+// agent launch --model accepts a model id harness.models does not list).
+// A static Enum without a source is still refused outside it.
 //
 // A source whose noun is not mounted is dropped with a notice.
 
@@ -70,7 +74,7 @@ func (a *App) mountSources(m *mounted, nouns []cli.CatalogNoun, mounted map[stri
 					continue
 				}
 				if a.sync {
-					a.setParam(opKey, name, func(q *ochazuke.Parameter) { q.Source = proxy })
+					a.setParam(opKey, name, func(q *ochazuke.Parameter) { q.Source, q.Free = proxy, true })
 					continue
 				}
 				src := m.sources[p.Source]
@@ -109,7 +113,7 @@ func (a *App) setChoices(src *choiceSource, ids []string) {
 }
 
 // applyChoices writes a source's cache into each parameter it feeds: the
-// static Enum, then the cached ids; Free until the source has answered.
+// static Enum, then the cached ids; always Free (suggestions only).
 func (a *App) applyChoices(src *choiceSource) {
 	for _, cp := range src.params {
 		p := cp.base
@@ -119,7 +123,7 @@ func (a *App) applyChoices(src *choiceSource) {
 				p.Enum = append(p.Enum, id)
 			}
 		}
-		p.Free = p.Free || !src.loaded
+		p.Free = true
 		a.setParam(cp.op, cp.name, func(q *ochazuke.Parameter) { *q = p })
 	}
 }
