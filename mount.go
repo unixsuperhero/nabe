@@ -51,12 +51,9 @@ type mounted struct {
 	// loading); listsLoaded are the lists loaded on their own that did.
 	loaded      bool
 	listsLoaded map[string]bool
-	stream      *stateLoad // the running state load, nil when none
-	// reloading is set while a timed reload (PageView.Reload) may still
-	// land rows the pick lists follow (followReload).
-	reloading bool
-	fresh     map[string]bool // extension noun.verb -> declares a boolean fresh
-	every     time.Duration   // the refresh interval; 0 never
+	stream      *stateLoad      // the running state load, nil when none
+	fresh       map[string]bool // extension noun.verb -> declares a boolean fresh
+	every       time.Duration   // the refresh interval; 0 never
 	// sources are the pick-list sources (extension noun.verb) the TUI
 	// serves from a cache (sources.go); nil from the CLI, whose parameters
 	// name the mounted proxy instead.
@@ -270,6 +267,7 @@ func (a *App) mountPage(m *mounted, lists []cli.CatalogList) error {
 		Fetch: func(ctx context.Context, noun, verb string) ([]byte, error) {
 			return execBin(ctx, m.bin, noun, verb, "--json", "{}")
 		},
+		OnRows: func(list string, rows []cli.Row) { a.listChoices(m, list, rows) },
 	})
 	if err != nil {
 		return err
@@ -278,7 +276,6 @@ func (a *App) mountPage(m *mounted, lists []cli.CatalogList) error {
 	page := r.PageOf(m.page)
 	render := page.Render
 	page.Render = func(rt *ochazuke.Runtime, width, height int) ochazuke.Block {
-		a.followReload(m)
 		v.SetStatus(a.statusLine(m))
 		return render(rt, width, height)
 	}
@@ -465,28 +462,11 @@ func (a *App) arm(m *mounted) {
 // tick is one timed refresh: the page's rows (PageView.Reload) and the
 // pick-list sources no list answers, then wait again.
 func (a *App) tick(m *mounted) {
-	a.followReload(m)
 	if err := m.view.Reload(); err != nil {
 		m.status = err.Error()
 	}
-	m.reloading = true
 	a.loadSources(m, false)
 	a.arm(m)
-}
-
-// followReload brings the pick lists a list answers up to that list once
-// a timed reload has landed (PageView.Reload fills the lists itself).
-func (a *App) followReload(m *mounted) {
-	if !m.reloading {
-		return
-	}
-	for _, j := range a.r.Jobs() {
-		if j.State == ochazuke.JobRunning && j.Verb == cli.LoadVerb && (j.Owner == m.page || strings.HasPrefix(j.Owner, m.page+"/")) {
-			return
-		}
-	}
-	m.reloading = false
-	a.listChoices(m)
 }
 
 // afterVerb refreshes what a verb of noun may have changed: the state,
@@ -651,7 +631,6 @@ func (a *App) stateBatch(m *mounted, st *stateLoad, b stateBatch) {
 		if err := m.view.SetState(st.rows); err != nil {
 			a.listErr(m, err)
 		}
-		a.listChoices(m)
 	}
 	if b.done {
 		m.loaded, m.stream = true, nil
@@ -710,11 +689,7 @@ func (a *App) listRows(m *mounted, l cli.CatalogList, out []byte) error {
 	if err != nil {
 		return fmt.Errorf("%s %s: %w", l.Noun, m.source(l), err)
 	}
-	if err := m.view.SetRows(l.ID, rows); err != nil {
-		return err
-	}
-	a.listChoices(m)
-	return nil
+	return m.view.SetRows(l.ID, rows)
 }
 
 // load runs fetch as a quiet job in owner's rows slot (a newer load

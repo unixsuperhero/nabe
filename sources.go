@@ -115,21 +115,25 @@ func (a *App) setChoices(src *choiceSource, ids []string) {
 	a.applyChoices(src)
 }
 
-// listChoices writes each source a list answers from that list's rows
-// (their extension ids).
-func (a *App) listChoices(m *mounted) {
+// listChoices writes the source a list answers from the rows that just
+// landed in it (PageConfig.OnRows: a timed reload, a verb's reload, the
+// state), so its pick lists follow the list.
+func (a *App) listChoices(m *mounted, list string, rows []cli.Row) {
 	for _, l := range m.specs() {
+		if l.ID != list {
+			continue
+		}
 		verb := m.source(l)
 		src := m.sources[l.Noun+"."+verb]
 		if verb == "" || src == nil || !src.list {
-			continue
+			return
 		}
-		items := m.view.List(l.ID).Items()
-		ids := make([]string, len(items))
-		for i, item := range items {
-			ids[i], _ = item.Data.(string)
+		ids := make([]string, len(rows))
+		for i, row := range rows {
+			ids[i] = row.ID
 		}
 		a.setChoices(src, ids)
+		return
 	}
 }
 

@@ -39,7 +39,7 @@ nabe keeps no copy of these; use them rather than rebuilding them.
 |---|---|
 | `ListItem.Data` -> `Instance.Data` | a row's extension id; a proxy reads `ctx.Instance.Data` for `--target` |
 | `List.Len()`, `List.Items()` | list counts on the pages |
-| `cli.MountPage`, `cli.PageView` (`SetRows`, `SetState`, `SetError`, `SetStatus`, `Reload`), `cli.DecodeRows`, `CatalogDoc.RowSource` | an extension's page: the groups rail, lists, columns, verb rows, row decoding, the `loading…`/`no rows` notes and the timed reload |
+| `cli.MountPage`, `cli.PageView` (`SetRows`, `SetState`, `SetError`, `SetStatus`, `Reload`), `cli.PageConfig.OnRows` (the pick lists follow every landing of a list), `cli.DecodeRows`, `CatalogDoc.RowSource` | an extension's page: the groups rail, lists, columns, verb rows, row decoding, the `loading…`/`no rows` notes and the timed reload |
 | `Model.Notify`, `Model.Notices`, `notice.list`/`notice.clear` | mount warnings, a persistent footer notice |
 | `cli.Settle(r, before)` | `--smoke` and the tests settle pending work without a Bubble Tea loop |
 | `cli.Shell` positional words (`Operation.ParameterOrder`), verb prefixes; `cli.Mount` noun prefixes | `nabe ext reg BIN [NAME]` |
