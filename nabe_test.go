@@ -671,3 +671,42 @@ func TestUnknownWordIsNotFound(t *testing.T) {
 		t.Fatalf("fake-tools: %v %q\n%s", err, out, errOut)
 	}
 }
+
+// The TUI opens on a named page: --page NAME, or NAME alone when no
+// command claims the word exactly (a mounted noun's prefix such as fake is
+// a page word, not an ambiguous command).
+func TestOpensOnANamedPage(t *testing.T) {
+	_, data := registered(t)
+	for _, args := range [][]string{{"--page", "extensions"}, {"extensions"}} {
+		out, errOut, err := nabe(t, append([]string{"-data", data, "--smoke"}, args...)...)
+		if err != nil || !strings.Contains(out, "registry ") || strings.Contains(out, "Groups") {
+			t.Fatalf("%q: %v\n%s\n%s", args, err, out, errOut)
+		}
+	}
+	for _, args := range [][]string{{"--page", "fake"}, {"--page", "ext/fake"}, {"fake"}} {
+		out, errOut, err := nabe(t, append([]string{"-data", data, "--smoke"}, args...)...)
+		if err != nil || !strings.Contains(out, "Groups") || !strings.Contains(out, "alpha") {
+			t.Fatalf("%q: %v\n%s\n%s", args, err, out, errOut)
+		}
+	}
+	if _, _, err := nabe(t, "-data", data, "--smoke", "--page", "nope"); err == nil || !strings.Contains(err.Error(), `no page "nope"; pages: fake, extensions`) {
+		t.Fatalf("--page nope: %v", err)
+	}
+	if _, _, err := nabe(t, "-data", data, "--page", "fake", "fake-tool", "ping"); err == nil || !strings.Contains(err.Error(), "takes no command") {
+		t.Fatalf("--page with a command: %v", err)
+	}
+
+	a, err := New(Options{Data: data, Sync: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := a.commands([]string{"fake"}, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, nil)
+	for word, want := range map[string]bool{"fake": true, "extensions": true, "fake-tool": false, "extension": false, "help": false, "fak": false} {
+		if got := a.pageWord(word, app); got != want {
+			t.Errorf("pageWord(%q) = %v, want %v", word, got, want)
+		}
+	}
+	if err := a.OpenOn("extensions"); err != nil || a.r.Page != extensionsPage || !a.extList.Focused() {
+		t.Fatalf("OpenOn extensions: %v page %s focus %s", err, a.r.Page, a.r.Focus)
+	}
+}

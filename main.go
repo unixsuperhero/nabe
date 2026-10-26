@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -30,17 +31,20 @@ func main() {
 }
 
 func usage() string {
-	return "usage: " + prog + " [-data DIR] [--smoke] NOUN VERB [ARG...] [--target ID] [--json '{...}'] [--ARG VALUE] [--yes]\n" + ocli.UsageHint(prog)
+	return "usage: " + prog + " [-data DIR] [--smoke] [--page NAME | NAME]\n       " + prog + " [-data DIR] NOUN VERB [ARG...] [--target ID] [--json '{...}'] [--ARG VALUE] [--yes]\n" + ocli.UsageHint(prog)
 }
 
 // run is the TUI with no words, one frame with --smoke, else one command
 // resolved by oden: a builtin (help, commands, which), catalog, a noun
-// (extension, or a mounted <ext>-<noun>) or a nabe-<word> on PATH.
+// (extension, or a mounted <ext>-<noun>) or a nabe-<word> on PATH. The TUI
+// and the frame open on --page NAME, or on NAME given as the only word
+// when it names a page and no command claims it exactly (pageWord).
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet(prog, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	data := flags.String("data", DefaultDataDir(), "nabe data directory; the registry is DIR/catalogs")
 	smoke := flags.Bool("smoke", false, "Mount the registry, load the rows, render one 80x24 frame to stdout and exit")
+	page := flags.String("page", "", "Open on this page: an extension's name, or extensions")
 	words := []string{"help"}
 	if err := flags.Parse(args); err == nil {
 		words = flags.Args()
@@ -50,6 +54,17 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	a, err := New(Options{Data: *data, Sync: len(words) > 0 && !*smoke})
 	if err != nil {
 		return err
+	}
+	if *page == "" && len(words) == 1 && a.pageWord(words[0], a.commands(words, stdin, stdout, stderr, nil)) {
+		*page, words, a.sync = words[0], nil, false
+	}
+	if *page != "" {
+		if len(words) > 0 {
+			return fmt.Errorf("--page opens the TUI; it takes no command (%s)", strings.Join(words, " "))
+		}
+		if err := a.OpenOn(*page); err != nil {
+			return err
+		}
 	}
 	if *smoke {
 		a.LoadRows()
@@ -86,4 +101,15 @@ func (a *App) commands(words []string, stdin io.Reader, stdout, stderr io.Writer
 	}
 	ocli.Mount(app, sh)
 	return app
+}
+
+// pageWord reports whether a lone word opens the TUI on a page: it names
+// one (OpenOn) and app resolves no command by exactly that word, so a
+// command always wins and a prefix of a mounted noun never reaches oden as
+// an ambiguous word.
+func (a *App) pageWord(word string, app *oden.App) bool {
+	if _, ok := a.pageNamed(word); !ok {
+		return false
+	}
+	return app.Catalog().Lookup(word) == nil
 }

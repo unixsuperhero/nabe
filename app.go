@@ -77,6 +77,38 @@ func New(opts Options) (*App, error) {
 	return a, a.focusPage(first)
 }
 
+// pageNamed is the page a name opens: an extension's registry name (its
+// page ext/NAME), the page id itself, or extensions.
+func (a *App) pageNamed(name string) (string, bool) {
+	if name == extensionsPage {
+		return extensionsPage, true
+	}
+	for _, e := range a.exts {
+		if e.name == name || e.page == name {
+			return e.page, true
+		}
+	}
+	return "", false
+}
+
+// OpenOn opens the page a name names (pageNamed) with its usual focus; an
+// unknown name is an error listing the names that open a page.
+func (a *App) OpenOn(name string) error {
+	page, ok := a.pageNamed(name)
+	if !ok {
+		names := make([]string, 0, len(a.exts)+1)
+		for _, e := range a.exts {
+			names = append(names, e.name)
+		}
+		names = append(names, extensionsPage)
+		return fmt.Errorf("no page %q; pages: %s", name, strings.Join(names, ", "))
+	}
+	if err := a.r.OpenPage(page); err != nil {
+		return err
+	}
+	return a.focusPage(page)
+}
+
 // focusPage starts an extension in its group navigation list.
 func (a *App) focusPage(page string) error {
 	for _, e := range a.exts {

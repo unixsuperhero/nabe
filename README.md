@@ -25,8 +25,12 @@ nabe extension unregister mtm      # remove the file (asks; --yes skips)
 nabe extension order ai 9          # place a page: pages sort by order (default 0), then registration
 nabe ext reg o-ai ai 9             # register with an order (bare words: bin, name, order)
 nabe                               # the TUI: one page per extension, then Extensions
+nabe proj                          # the TUI on the proj page (o tui proj); --page proj is the same
+nabe --page extensions             # the TUI on the Extensions page
 nabe --smoke                       # one 80x24 frame with the rows loaded
 ```
+
+A lone word that names a page (a registered extension's name, or `extensions`) opens the TUI there, unless a command is named exactly that word: commands win, and `--page NAME` always means the page. It works with `--smoke` too.
 
 `register` prints a summary such as `mtm: 11 nouns, 27 verbs, 3 pages (framework nouns skipped: 28)`. Run `MTM_SERVER=default nabe ...` to keep mtm from starting its own daemon.
 

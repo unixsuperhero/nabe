@@ -20,7 +20,8 @@ Family plans, todos and the roadmap live in `~/hub/o-plans/` (`README.md` is the
 | Registry files (`DATA/catalogs/<name>.json`), `register`/`refresh`/`unregister`/`list`, `BIN catalog` exec and validation, `planOf` (which nouns mount) | `registry.go` |
 | Mounting: page per extension, proxy verbs on `<ext>-<noun>`, `rowSource` (the verb declaring `rows`, else `list`) and the noun its rows answer to, lists, verb rows, catalog bindings and collision warnings, the extension page render | `mount.go` |
 | `App`, `New`, the `extension` noun and the extensions page, `work` (pending or inline) | `app.go` |
-| Flags (`-data`, `--smoke`), the oden App (`cli.Mount`) | `main.go` |
+| Flags (`-data`, `--smoke`, `--page`), the lone page word (`pageWord`), the oden App (`cli.Mount`) | `main.go` |
+| Which page a name opens (`pageNamed`, `OpenOn`) | `app.go` |
 | The fake extension the tests drive | `testdata/fake-ext`, `testdata/fake-catalog.json` |
 
 ## What nabe owns
