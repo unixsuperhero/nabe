@@ -7,7 +7,8 @@
     {"name": "item", "verbs": [
       {"name": "list", "description": "List the items", "kind": "application", "result": "row[]"},
       {"name": "remove", "description": "Remove an item", "kind": "application", "confirm": "Remove {{label}}?"},
-      {"name": "touch", "description": "Touch an item and report it", "kind": "application", "params": {"note": {"type": "string", "source": "item.list"}}}
+      {"name": "touch", "description": "Touch an item and report it", "kind": "application", "params": {"note": {"type": "string", "source": "item.list"}}},
+      {"name": "nudge", "description": "Nudge the item in the extension's own view", "kind": "interaction"}
     ]},
     {"name": "tool", "verbs": [
       {"name": "echo", "description": "Echo the text", "kind": "application", "params": {"text": {"type": "string", "required": true}, "voice": {"type": "string", "source": "tool.voices"}}},
@@ -34,7 +35,11 @@
     {"noun": "item", "mode": "normal", "keys": "t", "request": {"verb": "touch", "noun": "item"}},
     {"noun": "item", "mode": "normal", "keys": "j", "request": {"verb": "touch", "noun": "item"}},
     {"noun": "tool", "mode": "normal", "keys": "p", "request": {"verb": "ping", "noun": "tool"}},
-    {"noun": "project", "mode": "normal", "keys": "o", "request": {"verb": "open", "noun": "project"}}
+    {"noun": "project", "mode": "normal", "keys": "o", "request": {"verb": "open", "noun": "project"}},
+    {"noun": "project", "mode": "normal", "keys": "l", "request": {"verb": "open", "noun": "project"}},
+    {"noun": "item", "mode": "normal", "keys": "n", "request": {"verb": "nudge", "noun": "item"}},
+    {"noun": "item", "mode": "find_pending", "pattern": "any", "request": {"verb": "touch", "noun": "item"}},
+    {"noun": "item", "keys": "ctrl+c", "request": {"verb": "quit", "noun": "app"}}
   ],
   "pages": []
 }

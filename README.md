@@ -79,7 +79,7 @@ mount("mtm") = {
   verbRows: "any other noun no row source lists: one row per verb (ext/mtm/NOUN/VERB); enter runs it (not for verbs with required parameters: use the palette)",
   verbs:    "mtm-project.open -> `mtm project open --target <row data> --json '{}' --yes` (pending), then the state reloads (without a state source: only the lists holding that noun's rows)",
   confirm:  "the catalog's template, unchanged ({{label}} reads the row label)",
-  bindings: "the catalog rows of mounted nouns via LoadBindings; a key the list, page or app already binds is dropped with a footer notice",
+  bindings: "the catalog rows of mounted nouns via LoadBindings; a key the list, page or app already binds (unguarded, to another request) is dropped with a footer notice; rows nabe cannot run (an extension mode, an unmounted interaction or builtin verb) and rows the host already holds are skipped quietly",
 }
 ```
 

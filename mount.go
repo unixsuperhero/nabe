@@ -247,7 +247,7 @@ func (a *App) mount(name string, e Entry) error {
 		return err
 	}
 	a.mountSources(m, nouns, mounted)
-	a.loadBindings(m, e.Catalog.Bindings, mounted, homes)
+	a.loadBindings(m, e.Catalog, e.Catalog.Bindings, mounted, homes)
 	a.exts = append(a.exts, m)
 	return nil
 }
@@ -342,7 +342,23 @@ func (a *App) statusLine(m *mounted) string {
 
 // loadBindings installs the catalog rows of the mounted nouns, renamed to
 // the nabe nouns; homes is the list each noun's instances live in.
-func (a *App) loadBindings(m *mounted, rows []ochazuke.Binding, nouns, homes map[string]string) {
+//
+// A catalog lists every row the extension's own runtime holds, the
+// framework's included, so some rows are skipped quietly, by data:
+//   - a row in a mode the host does not define (the extension's own modal
+//     mode, such as a copy mode's pending find);
+//   - a row whose request is a verb of the catalog that nabe does not
+//     mount (an interaction or builtin verb, a verb of a noun skipped for
+//     its modal pin) and the host does not register: it runs only inside
+//     the extension's own process;
+//   - a row the host already holds: its first key is bound on the row's
+//     path to the same request (the framework's own rows echoed back,
+//     ctrl+c app.quit).
+//
+// Every other problem is a notice: an instance row, a request naming
+// nothing the catalog or the host knows, a key the host binds to another
+// request, an unknown guard.
+func (a *App) loadBindings(m *mounted, catalog cli.CatalogDoc, rows []ochazuke.Binding, nouns, homes map[string]string) {
 	for _, row := range rows {
 		local, ok := nouns[row.Noun]
 		if !ok {
@@ -353,16 +369,26 @@ func (a *App) loadBindings(m *mounted, rows []ochazuke.Binding, nouns, homes map
 			a.warn("%s dropped: instance rows name the extension's own instances", where)
 			continue
 		}
-		if req, ok := nouns[row.Request.Noun]; ok {
+		if row.Mode != "" && !a.r.Modes[row.Mode] && !a.r.IsPendingMode(row.Mode) {
+			continue // the extension's own mode
+		}
+		if req, ok := nouns[row.Request.Noun]; ok && a.mountedVerb(req, row.Request.Verb) {
 			row.Request.Noun = req
-		} else if _, ok := a.r.Operation(row.Request.Key()); !ok {
+		} else if _, ok := a.r.Operation(row.Request.Key()); ok {
+			// a verb of the host (the framework's)
+		} else if catalogVerb(catalog, row.Request.Noun, row.Request.Verb) {
+			continue // the extension's own process runs it
+		} else {
 			a.warn("%s dropped: %s is not mounted", where, row.Request.Key())
 			continue
 		}
 		listID := homes[row.Noun]
 		row.Noun = local
 		if owner, taken := a.taken(listID, row); taken {
-			a.warn("%s dropped: taken by %s", where, owner)
+			if a.sameRequest(owner.Request, row.Request) {
+				continue // the host already answers the key so
+			}
+			a.warn("%s dropped: taken by %s (%s)", where, a.r.DisplayNoun(owner.Noun), a.r.DisplayKey(owner.Request.Key()))
 			continue
 		}
 		data, err := json.Marshal([]ochazuke.Binding{row})
@@ -375,13 +401,52 @@ func (a *App) loadBindings(m *mounted, rows []ochazuke.Binding, nouns, homes map
 	}
 }
 
-// taken reports the framework or nabe row a mounted row would shadow: a
-// row with the same first key, in the same mode or in any mode, on a noun
-// of the row's path (its list, the page, app; nabe's own rows there too).
-// Pattern rows (digit, any) are not compared.
-func (a *App) taken(listID string, row ochazuke.Binding) (string, bool) {
+// mountedVerb reports whether the mounted noun has the verb.
+func (a *App) mountedVerb(noun, verb string) bool {
+	_, ok := a.r.Operations[noun+"."+verb]
+	return ok
+}
+
+// catalogVerb reports whether the catalog declares noun.verb (noun by its
+// name or an alias the catalog publishes).
+func catalogVerb(doc cli.CatalogDoc, noun, verb string) bool {
+	noun = doc.CanonicalNoun(noun)
+	for _, n := range doc.Nouns {
+		if n.Name != noun {
+			continue
+		}
+		for _, v := range n.Verbs {
+			if v.Name == verb {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// sameRequest reports two requests naming one operation (aliases
+// resolved) with the same arguments.
+func (a *App) sameRequest(x, y ochazuke.Request) bool {
+	x, y = a.r.CanonicalRequest(x), a.r.CanonicalRequest(y)
+	if x.Key() != y.Key() {
+		return false
+	}
+	xa, errX := json.Marshal(x.Args)
+	ya, errY := json.Marshal(y.Args)
+	return errX == nil && errY == nil && string(xa) == string(ya)
+}
+
+// taken reports the framework or nabe row a mounted row would shadow: an
+// unguarded row with the same first key, in the same mode or in any mode,
+// on a noun of the row's path (its list, the page, app; nabe's own rows
+// there too); owner.Noun is that noun. Pattern rows (digit, any) are not
+// compared. A guarded row does not take its key: it answers only while
+// its guard holds and falls through otherwise, and the row's own noun
+// answers before it (UX-RULES R5.11: a row noun's own h or l answers
+// before a table's scroll-then-focus rows).
+func (a *App) taken(listID string, row ochazuke.Binding) (owner ochazuke.Binding, taken bool) {
 	if row.Keys == "" {
-		return "", false
+		return owner, false
 	}
 	first := strings.Fields(row.Keys)[0]
 	var nouns []string
@@ -403,13 +468,14 @@ func (a *App) taken(listID string, row ochazuke.Binding) (string, bool) {
 				continue
 			}
 			for _, b := range n.Bindings[mode] {
-				if b.Keys != "" && strings.Fields(b.Keys)[0] == first {
-					return fmt.Sprintf("%s (%s)", a.r.DisplayNoun(name), a.r.DisplayKey(b.Request.Key())), true
+				if b.Keys != "" && b.When == "" && strings.Fields(b.Keys)[0] == first {
+					b.Noun = name
+					return b, true
 				}
 			}
 		}
 	}
-	return "", false
+	return owner, false
 }
 
 // proxy is the handler of one mounted verb.

@@ -372,6 +372,34 @@ func TestListVerbRowsAnswerToTheDeclaredNoun(t *testing.T) {
 	}
 }
 
+// A catalog lists every row of the extension's runtime. Rows nabe cannot
+// run are skipped without a notice: a row in a mode the host does not
+// define (find_pending), a row naming a verb of the catalog nabe does not
+// mount (the interaction item.nudge), and a row the host already holds
+// (ctrl+c app.quit). A row noun's own l answers before a table's guarded
+// scroll-then-focus rows (UX-RULES R5.11), so project's l mounts.
+func TestRowsTheHostCannotRunAreSkippedQuietly(t *testing.T) {
+	a, state := tui(t)
+	if want := []string{"fake: key j on item dropped: taken by list (list.move)"}; !slices.Equal(a.m.Notices, want) {
+		t.Fatalf("notices %q, want %q", a.m.Notices, want)
+	}
+	for mode, rows := range a.r.Noun("fake-item").Bindings {
+		for _, row := range rows {
+			if mode != "normal" || row.Keys == "n" || row.Keys == "ctrl+c" {
+				t.Fatalf("row loaded in %q: %+v", mode, row)
+			}
+		}
+	}
+	if err := a.r.SetFocus("ext/fake/projects/p1"); err != nil {
+		t.Fatal(err)
+	}
+	before := len(calls(t, state))
+	drain(a, press(a, tea.KeyPressMsg{Code: 'l', Text: "l"}))
+	if got := calls(t, state)[before:]; len(got) < 1 || got[0] != "project open --target p1 --json {} --yes" {
+		t.Fatalf("calls after l: %q (focus %q)", got, a.r.Focus)
+	}
+}
+
 func TestGroupsSelectTheRightPanelWithoutExecuting(t *testing.T) {
 	a, state := tui(t)
 	if err := a.exts[0].groups.Focus(); err != nil {
