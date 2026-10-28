@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/unixsuperhero/ochazuke"
 	"github.com/unixsuperhero/ochazuke/cli"
@@ -43,9 +44,14 @@ func TestMountedListDrawsCatalogColumns(t *testing.T) {
 	}
 	st := newStateLoad()
 	a.stateBatch(m, st, stateBatch{rows: []cli.Row{
-		{Noun: "item", ID: "a1", Label: "alpha", Cells: []string{"alpha", "idle", "~/proj/alpha"}},
+		{Noun: "item", ID: "a1", Label: "alpha", Cells: []string{"alpha", "idle", "~/proj/alpha"}, Tones: []ochazuke.ToneSpan{ochazuke.CellTone(1, ochazuke.ToneIdle)}},
 		{Noun: "item", ID: "b2", Label: "beta"},
 	}, done: true})
+	// A state line's tones reach the row (ochazuke v0.26.0): the theme
+	// colours the cell, nabe passes it through.
+	if got := item.Items(); len(got) != 2 || len(got[0].Tones) != 1 || got[0].Tones[0].Tone != ochazuke.ToneIdle || got[0].Tones[0].Cell != 1 {
+		t.Fatalf("state rows' tones %+v", got)
+	}
 	if err := item.Focus(); err != nil {
 		t.Fatal(err)
 	}
@@ -59,10 +65,10 @@ func TestMountedListDrawsCatalogColumns(t *testing.T) {
 		}
 	}
 	// Rows from a list source bring cells too.
-	if err := a.listRows(m, cli.CatalogList{ID: "ext/fake/item", Noun: "item"}, []byte(`[{"id": "c3", "name": "gamma", "cells": ["gamma", "busy", null]}]`)); err != nil {
+	if err := a.listRows(m, cli.CatalogList{ID: "ext/fake/item", Noun: "item"}, []byte(`[{"id": "c3", "name": "gamma", "cells": ["gamma", "busy", null], "tones": [{"cell": 1, "tone": "state.working"}]}]`)); err != nil {
 		t.Fatal(err)
 	}
-	if got := item.Items(); len(got) != 1 || strings.Join(got[0].Cells, "|") != "gamma|busy|" {
+	if got := item.Items(); len(got) != 1 || strings.Join(got[0].Cells, "|") != "gamma|busy|" || len(got[0].Tones) != 1 || got[0].Tones[0].Tone != ochazuke.ToneWorking {
 		t.Fatalf("list rows %+v", got)
 	}
 }
@@ -96,6 +102,27 @@ func TestExtensionsPageIsATable(t *testing.T) {
 	frame = ansi.Strip(a.m.View().Content)
 	if !strings.Contains(frame, "nouns") || strings.Contains(frame, "fake-ext") {
 		t.Fatalf("40: want counts, not the bin:\n%s", frame)
+	}
+	// Narrow, the table marks what it hides, l scrolls with the name
+	// pinned until the bin shows, and at that edge (the page's only stop)
+	// l clamps; h scrolls back (ochazuke v0.25.0, UX-RULES R5.11-R5.13).
+	if !strings.Contains(frame, "›") {
+		t.Fatalf("40: no edge marker:\n%s", frame)
+	}
+	for range len(extensionColumns) + 2 {
+		_, _ = a.m.Update(tea.KeyPressMsg{Code: 'l', Text: "l"})
+		frame = ansi.Strip(a.m.View().Content)
+		if !strings.Contains(frame, "name") || !strings.Contains(frame, "fake") || a.r.Focus != "fake" {
+			t.Fatalf("40, l: focus %q, name not pinned:\n%s", a.r.Focus, frame)
+		}
+	}
+	if a.extList.ColumnOffset() == 0 || !strings.Contains(frame, "bin") {
+		t.Fatalf("40: l did not scroll to the bin (offset %d):\n%s", a.extList.ColumnOffset(), frame)
+	}
+	end := a.extList.ColumnOffset()
+	_, _ = a.m.Update(tea.KeyPressMsg{Code: 'h', Text: "h"})
+	if a.extList.ColumnOffset() >= end {
+		t.Fatalf("40, h: offset %d, was %d", a.extList.ColumnOffset(), end)
 	}
 }
 
