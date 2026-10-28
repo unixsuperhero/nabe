@@ -440,13 +440,17 @@ func marksBuiltin(doc cli.CatalogDoc) bool {
 // (ochazuke's own registry): the fallback for a catalog without builtin.
 // An application cannot override one with an application handler
 // (NounBuilder.Verb panics), so an application verb under such a key is
-// the framework's, never the extension's.
+// the framework's, never the extension's. The registry is keyed by
+// canonical names (ochazuke.outline.expand, since ochazuke v0.16.0) and a
+// catalog without builtin predates them (outline.expand), so each key is
+// listed under its short name too (DisplayKey).
 var frameworkVerbs = sync.OnceValue(func() map[string]bool {
 	r := ochazuke.NewRuntime()
 	ochazuke.NewModel(r)
-	keys := make(map[string]bool, len(r.Operations))
+	keys := make(map[string]bool, 2*len(r.Operations))
 	for key := range r.Operations {
 		keys[key] = true
+		keys[r.DisplayKey(key)] = true
 	}
 	return keys
 })

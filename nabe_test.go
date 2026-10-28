@@ -272,7 +272,7 @@ func TestConfirmShowsTheTemplateThenTheListRefreshes(t *testing.T) {
 	a, _ := tui(t)
 	drain(a, press(a, tea.KeyPressMsg{Code: 'x', Text: "x"}))
 	top := a.r.Instances[a.r.TopModal()]
-	if top == nil || top.Noun != "confirm" || top.Payload.Prompt != "Remove alpha?" {
+	if top == nil || top.Noun != a.r.CanonicalNoun("confirm") || top.Payload.Prompt != "Remove alpha?" {
 		t.Fatalf("modal %+v", top)
 	}
 	if view := frame(a); !strings.Contains(view, "Remove alpha?") {

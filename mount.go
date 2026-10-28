@@ -355,7 +355,7 @@ func (a *App) loadBindings(m *mounted, rows []ochazuke.Binding, nouns, homes map
 		}
 		if req, ok := nouns[row.Request.Noun]; ok {
 			row.Request.Noun = req
-		} else if _, ok := a.r.Operations[row.Request.Key()]; !ok {
+		} else if _, ok := a.r.Operation(row.Request.Key()); !ok {
 			a.warn("%s dropped: %s is not mounted", where, row.Request.Key())
 			continue
 		}
@@ -404,7 +404,7 @@ func (a *App) taken(listID string, row ochazuke.Binding) (string, bool) {
 			}
 			for _, b := range n.Bindings[mode] {
 				if b.Keys != "" && strings.Fields(b.Keys)[0] == first {
-					return fmt.Sprintf("%s (%s)", name, b.Request.Key()), true
+					return fmt.Sprintf("%s (%s)", a.r.DisplayNoun(name), a.r.DisplayKey(b.Request.Key())), true
 				}
 			}
 		}
