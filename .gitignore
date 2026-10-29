@@ -2,3 +2,5 @@
 go.work
 go.work.sum
 /nabe
+/nabe.test
+*.test
